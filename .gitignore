@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+build/
+
+# env (실제 값 — 커밋 금지)
+.env
+.env.local
+frontend/.env
+backend/.env
+
+# 템플릿은 커밋 대상 (.env.example)
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+
+# editor
+.vscode/
+.idea/
