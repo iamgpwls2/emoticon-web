@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+
+# env (실제 값 — 커밋 금지)
+.env
+.env.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

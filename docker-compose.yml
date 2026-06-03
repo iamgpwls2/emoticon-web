@@ -1,5 +1,6 @@
 services:
   backend:
+    container_name: emoticon-web-backend
     build:
       context: ./backend
     working_dir: /workspace
@@ -16,6 +17,7 @@ services:
       - /workspace/node_modules
 
   frontend:
+    container_name: emoticon-web-frontend  
     build:
       context: ./frontend
     working_dir: /workspace
