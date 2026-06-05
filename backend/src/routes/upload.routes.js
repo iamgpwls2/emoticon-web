@@ -1,0 +1,15 @@
+import { Router } from 'express';
+import { uploadImage as uploadImageController } from '../controllers/upload.controller.js';
+import { requireAuth } from '../middlewares/auth.middleware.js';
+import { imageUpload as uploadSingleImage } from '../middlewares/imageUpload.middleware.js';
+
+const router = Router();
+
+/**
+ * POST /api/uploads/image
+ * multipart/form-data field: image
+ * req.user.id는 requireAuth에서 설정됩니다.
+ */
+router.post('/image', requireAuth, uploadSingleImage, uploadImageController);
+
+export default router;

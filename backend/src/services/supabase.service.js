@@ -19,12 +19,4 @@ export const supabase = createClient(
   clientOptions
 );
 
-/**
- * 관리자용 (service role) — backend 내부 전용.
- * frontend, VITE_*, 응답 JSON, 로그에 노출하지 마세요.
- */
-export const supabaseAdmin = createClient(
-  env.SUPABASE_URL,
-  env.SUPABASE_SERVICE_ROLE_KEY,
-  clientOptions
-);
+export { supabaseAdmin } from '../config/supabase.js';

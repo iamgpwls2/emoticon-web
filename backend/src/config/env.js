@@ -30,4 +30,8 @@ export const env = {
     'SUPABASE_SERVICE_ROLE_KEY',
     supabaseServiceRoleKey
   ),
+  SUPABASE_UPLOAD_BUCKET: requireEnv(
+    'SUPABASE_UPLOAD_BUCKET',
+    process.env.SUPABASE_UPLOAD_BUCKET
+  ),
 };
