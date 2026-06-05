@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HelloWorld from '../components/HelloWorld.vue'
 import RegisterPage from '../views/RegisterPage.vue'
 import LoginPage from '../views/LoginPage.vue'
-import GeneratePage from '../views/GeneratePage.vue'
+import CreatePage from '../pages/CreatePage.vue'
 import GalleryPage from '../views/GalleryPage.vue'
 import { supabase } from '../lib/supabase.js'
 
@@ -29,7 +29,7 @@ const router = createRouter({
     {
       path: '/generate',
       name: 'Generate',
-      component: GeneratePage,
+      component: CreatePage,
       meta: { requiresAuth: true },
     },
     {
