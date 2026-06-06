@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 3 — Supabase·Backend 인증·외부 API 규칙 반영)
+- 2026-06-06 (OpenAI API key 관리 정책 상세화)
 
 ## 스택 전제
 
@@ -64,19 +65,104 @@ service role 사용 시 RLS가 적용되지 않으므로, 쿼리·Storage 접근
 
 ---
 
-## LLM / Image API Key
+## OpenAI API key
 
-LLM API key와 이미지 생성 API key도 **backend에서만** 관리합니다.
+OpenAI API key(이 프로젝트 환경변수명: **`LLM_API_KEY`**)는 **backend에서만** 관리합니다.  
+프롬프트 구체화(`POST /api/prompts/refine`) 시 `backend/src/services/llm.service.js`가 OpenAI Chat Completions API를 호출합니다.
 
-**원칙:**
+### 저장 위치
 
-- frontend는 **backend API만** 호출합니다.
-- frontend에서 외부 AI API key를 **직접 사용하지 않습니다**.
-- backend가 **인증된 사용자 요청**인지 확인(`requireAuth`)한 후 외부 API를 호출합니다.
+| 위치 | 허용 |
+|------|------|
+| `backend/.env` | ✅ **유일한 저장 위치** |
+| `frontend/.env` | ❌ 금지 |
+| `VITE_*` 환경변수 | ❌ 금지 |
+| Vue / JS / TS 소스 코드 | ❌ 금지 |
+| Git 저장소 | ❌ 금지 |
 
-**환경변수 예시 (backend/.env 전용, placeholder는 `.env.example`만):**
+1. **OpenAI API key는 `backend/.env`에만 저장한다.**
+2. **`frontend/.env` 또는 `VITE_` 환경변수에는 저장하지 않는다.**  
+   Vite는 `VITE_` 접두사 변수를 **브라우저 번들에 포함**하므로, OpenAI key를 프론트 env에 넣으면 즉시 노출됩니다.
+3. **Vue 코드에는 OpenAI API key를 작성하지 않는다.**  
+   하드코딩, 주석, 테스트용 임시 값 포함 전부 금지.
 
-- `OPENAI_API_KEY`, `IMAGE_API_KEY` 등 — Express 라우트 내부에서만 HTTP 호출
+### 호출 경로
+
+4. **frontend는 OpenAI API를 직접 호출하지 않고, backend의 `POST /api/prompts/refine`만 호출한다.**
+
+```txt
+Browser → frontend/src/services/prompt.service.js
+       → backend POST /api/prompts/refine (Bearer JWT)
+       → backend/src/services/llm.service.js
+       → OpenAI API (server-only)
+```
+
+- frontend: `refinePrompt()` — `Authorization: Bearer {access_token}` 만 전송
+- backend: `requireAuth` → `validatePromptRefine` → `refinePrompt` controller → `refinePromptWithLLM`
+- OpenAI endpoint URL(`https://api.openai.com/v1/chat/completions`)도 **backend 코드에만** 존재
+
+### 에러 응답·로깅
+
+5. **backend는 OpenAI API 호출 실패 시 민감정보를 클라이언트에 반환하지 않는다.**
+
+클라이언트에 **포함 금지** 항목:
+
+- API key (`LLM_API_KEY` 값)
+- OpenAI 원본 에러 body (타입, 메시지, request id 등)
+- stack trace
+- `process.env` 덤프
+
+클라이언트 응답 예시 (고정 메시지):
+
+```json
+{
+  "message": "프롬프트 구체화에 실패했습니다. 다시 시도해 주세요."
+}
+```
+
+서버 로그에는 원인 파악용으로 **요약 정보만** 남긴다 (예: HTTP status, OpenAI error type). key 값·전체 응답 body는 로그에 남기지 않는다.
+
+### env 파일·Git
+
+6. **`.env`는 Git에 commit하지 않는다.** (`.gitignore` 적용)
+7. **`.env.example`에는 변수명과 placeholder만 작성한다.** 실제 key 문자열·팀원 개인 key 금지.
+
+```bash
+# backend/.env.example — 변수명만, placeholder 예시
+LLM_API_KEY=your-llm-api-key
+LLM_MODEL=gpt-4o-mini
+```
+
+### 팀 운영
+
+8. **팀원 개인 API key를 공유하지 않는다.**  
+   Slack, PR, 이슈, 화면 공유, 채팅에 key를 붙여넣지 않는다. 각자 OpenAI Dashboard에서 발급·관리.
+9. **필요 시 key를 삭제하고 새로 발급하는 방식으로 교체한다.**  
+   유출·노출·퇴사·권한 회수가 의심되면 기존 key를 **즉시 폐기(revoke)** 하고 새 key를 `backend/.env`에만 반영. Docker 사용 시 `docker compose up -d --force-recreate backend`로 재적용.
+
+### 환경변수 (backend 전용)
+
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `LLM_API_KEY` | Yes | OpenAI API key. 미설정 시 500 |
+| `LLM_MODEL` | No | 기본값 `gpt-4o-mini` (`llm.service.js`) |
+
+### 금지 사항 요약
+
+- frontend에서 `fetch('https://api.openai.com/...')` 직접 호출
+- `VITE_LLM_API_KEY`, `VITE_OPENAI_API_KEY` 등 `VITE_` 접두사 등록
+- 에러 응답·Network 탭·소스맵을 통한 key 노출
+- compose YAML / Dockerfile / README에 실제 key 기록
+
+---
+
+## Image API Key (예정)
+
+이미지 생성 API key도 OpenAI key와 동일하게 **backend에서만** 관리합니다.
+
+- frontend는 backend API만 호출
+- `requireAuth` 이후 서버에서 외부 API 호출
+- 환경변수 예시: `IMAGE_API_KEY` 등 — `backend/.env` 전용, `.env.example`에는 변수명만
 
 ---
 
@@ -141,12 +227,15 @@ git status   # .env 가 staged 되지 않았는지
 
 ## 구현 매핑 (현재 코드)
 
-| 구성요소 | 키 |
-|----------|-----|
+| 구성요소 | 키 / 역할 |
+|----------|-----------|
 | `frontend/src/lib/supabase.js` | publishable / anon |
+| `frontend/src/services/prompt.service.js` | `POST /api/prompts/refine` 호출 (OpenAI 직접 호출 없음) |
 | `backend/src/config/env.js` | URL, anon/publishable, service role 로드·필수 검증 |
 | `backend/src/middlewares/auth.middleware.js` | anon 클라이언트 + Bearer JWT |
 | `backend/src/services/supabase.service.js` | `supabase` (anon), `supabaseAdmin` (service role) |
+| `backend/src/services/llm.service.js` | `LLM_API_KEY` → OpenAI Chat Completions (server-only) |
+| `backend/src/controllers/prompt.controller.js` | 실패 시 고정 500 메시지, key·stack 미노출 |
 
 ---
 

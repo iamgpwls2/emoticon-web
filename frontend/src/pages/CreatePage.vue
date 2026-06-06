@@ -2,7 +2,9 @@
 import { computed, ref } from 'vue'
 import ImageUploader from '../components/ImageUploader.vue'
 import PromptForm from '../components/PromptForm.vue'
+import PromptRefiner from '../components/PromptRefiner.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
+import { supabase } from '../lib/supabase.js'
 import { isPromptFormComplete } from '../utils/inputValidation.js'
 
 const uploadedImage = ref(null)
@@ -11,9 +13,26 @@ const promptForm = ref({
   motion: '',
   text: '',
 })
+const storyPrompt = ref('')
+const finalPrompt = ref('')
 const promptTouched = ref(false)
 
 const hasImage = computed(() => Boolean(uploadedImage.value))
+
+const originalImageUrl = computed(() => {
+  const image = uploadedImage.value
+  if (!image) return ''
+
+  if (image.url?.trim()) {
+    return image.url.trim()
+  }
+
+  const { bucket, path } = image
+  if (!bucket || !path) return ''
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+  return data.publicUrl
+})
 
 const isFormComplete = computed(() =>
   isPromptFormComplete({
@@ -51,6 +70,8 @@ function handleNextStep() {
   console.log('Next step:', {
     uploadedImage: uploadedImage.value,
     prompt: { ...promptForm.value },
+    storyPrompt: storyPrompt.value,
+    finalPrompt: finalPrompt.value,
   })
 }
 </script>
@@ -76,6 +97,14 @@ function handleNextStep() {
         <PromptForm
           @update:form="onFormUpdate"
           @interaction="onPromptInteraction"
+        />
+        <PromptRefiner
+          :emotion="promptForm.emotion"
+          :motion="promptForm.motion"
+          :input-text="promptForm.text"
+          :original-image-url="originalImageUrl"
+          @update:story-prompt="storyPrompt = $event"
+          @update:final-prompt="finalPrompt = $event"
         />
       </div>
 

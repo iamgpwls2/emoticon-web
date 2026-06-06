@@ -1,5 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 import { env } from './env.js';
+
+const clientOptions = {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+  realtime: {
+    transport: ws,
+  },
+};
 
 /**
  * 서버 전용 Supabase admin client (service role).
@@ -8,10 +19,5 @@ import { env } from './env.js';
 export const supabaseAdmin = createClient(
   env.SUPABASE_URL,
   env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
+  clientOptions
 );

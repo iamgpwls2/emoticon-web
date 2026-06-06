@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 4 — `POST /api/uploads/image` 명세 반영)
+- 2026-06-06 (Day 6 — `POST /api/prompts/refine` 명세 반영)
 
 ## 스택 전제
 
@@ -37,7 +38,7 @@
 | GET | `/health`, `/api/health` | — | 1 | 헬스체크 |
 | GET | `/api/auth/me` | Bearer | 3 | 현재 사용자 |
 | **POST** | **`/api/uploads/image`** | **Bearer** | **4** | **이미지 업로드 → Supabase Storage** |
-| — | Prompt refine | Bearer | 이후 | LLM 프롬프트 정제 |
+| **POST** | **`/api/prompts/refine`** | **Bearer** | **6** | **LLM 프롬프트 정제** |
 | — | Image generation | Bearer | 이후 | 이미지 생성 |
 | — | Gallery list | Bearer | 이후 | 갤러리 목록 |
 | — | Delete | Bearer | 이후 | 삭제 |
@@ -236,6 +237,193 @@ Middleware chain: `requireAuth` → `uploadSingleImage` (multer) → `uploadImag
 
 ---
 
+## POST /api/prompts/refine
+
+로그인한 사용자가 입력한 **감정·모션·텍스트**(및 선택적 참조 이미지 URL)를 backend LLM으로 정제해  
+`storyPrompt` / `finalPrompt`를 반환한다.
+
+LLM API Key는 **backend 전용** — frontend는 본 엔드포인트만 호출한다. (`04-security/api-key-policy.md`)
+
+---
+
+### 1. Endpoint
+
+```http
+POST /api/prompts/refine
+```
+
+---
+
+### 2. 인증
+
+인증이 필요하다.
+
+프론트엔드는 Supabase Auth session에서 access token을 가져와 Authorization header에 포함해야 한다.
+
+```http
+Authorization: Bearer <access_token>
+```
+
+인증 토큰이 없거나 유효하지 않으면 `401 Unauthorized`를 반환한다.
+
+---
+
+### 3. Request Body
+
+`Content-Type: application/json`
+
+```json
+{
+  "emotion": "happy",
+  "motion": "wave",
+  "inputText": "안녕!",
+  "originalImageUrl": "https://example.com/image.png"
+}
+```
+
+Request 예시:
+
+```bash
+curl -X POST http://localhost:3000/api/prompts/refine \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "emotion": "happy",
+    "motion": "wave",
+    "inputText": "안녕!",
+    "originalImageUrl": "https://example.com/image.png"
+  }'
+```
+
+> 프론트는 `VITE_API_BASE_URL`을 사용한다. backend에 직접 호출할 때는 `http://localhost:4000`을 사용한다.
+
+---
+
+### 4. Required Fields
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `emotion` | string | 감정. trim 후 1자 이상 |
+| `motion` | string | 모션. trim 후 1자 이상 |
+| `inputText` | string | 이모티콘에 표시할 텍스트. trim 후 1자 이상, 최대 500자 |
+
+---
+
+### 5. Optional Fields
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `originalImageUrl` | string | 업로드된 원본 이미지 URL. 전달 시 LLM이 캐릭터 외형 참조에 사용. 생략 가능 |
+
+---
+
+### 6. Success Response 200
+
+#### Status
+
+```http
+200 OK
+```
+
+#### Body
+
+```json
+{
+  "storyPrompt": "...",
+  "finalPrompt": "..."
+}
+```
+
+#### Response 필드
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `storyPrompt` | string | 상황·분위기를 설명하는 스토리 프롬프트 |
+| `finalPrompt` | string | 이미지 생성 API에 전달할 최종 프롬프트 |
+
+---
+
+### 7. Error Response
+
+#### 400 Bad Request
+
+필수 필드 누락, 빈 문자열, `inputText` 길이 초과, `originalImageUrl` 타입 오류 등 검증 실패 시 반환한다.
+
+```json
+{
+  "message": "입력값을 확인해 주세요.",
+  "errors": [
+    {
+      "field": "emotion",
+      "message": "emotion은 필수값입니다."
+    }
+  ]
+}
+```
+
+```json
+{
+  "message": "입력값을 확인해 주세요.",
+  "errors": [
+    {
+      "field": "inputText",
+      "message": "inputText는 최대 500자까지 입력할 수 있습니다."
+    }
+  ]
+}
+```
+
+#### 401 Unauthorized
+
+로그인하지 않았거나 인증 토큰이 유효하지 않은 경우 반환한다.
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Authorization header is required."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Invalid or expired access token."
+  }
+}
+```
+
+#### 500 Internal Server Error
+
+LLM API 오류, 응답 파싱 실패, 타임아웃, `LLM_API_KEY` 미설정 등 서버 내부 처리 중 문제가 발생한 경우 반환한다.
+
+```json
+{
+  "message": "프롬프트 구체화에 실패했습니다. 다시 시도해 주세요."
+}
+```
+
+> 500 응답에 LLM API Key·OpenAI raw 응답·내부 secret은 **포함하지 않는다**.
+
+---
+
+### Frontend / Backend 처리 (Day 6)
+
+| 구분 | 경로 |
+|------|------|
+| Frontend Service | `frontend/src/services/prompt.service.js` → `refinePrompt()` |
+| Frontend Component | `frontend/src/components/PromptRefiner.vue` |
+| Backend route | `backend/src/routes/prompt.routes.js` |
+| Backend controller | `backend/src/controllers/prompt.controller.js` |
+| Validation | `backend/src/validators/prompt.validator.js` |
+| LLM | `backend/src/services/llm.service.js` |
+
+Middleware chain: `requireAuth` → `validatePromptRefine` → `refinePromptController`
+
+---
+
 ## 상태 코드 규칙
 
 | 코드 | 용도 |
@@ -263,7 +451,8 @@ Middleware chain: `requireAuth` → `uploadSingleImage` (multer) → `uploadImag
 
 ## 관련 문서
 
-- PRD: `01-prd/02-image-upload-preview.md`
+- PRD (업로드): `01-prd/02-image-upload-preview.md`
+- PRD (LLM 정제): `01-prd/04-llm-prompt-refine.md`
 - Storage: `02-contracts/storage-policy.md`
 - 에러: `02-contracts/error-response.md`
 - 보안: `04-security/api-key-policy.md`, `04-security/auth-rls-policy.md`
