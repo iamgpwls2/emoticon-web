@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 4 — `user-uploads` 버킷·업로드 경로 규칙 반영)
+- 2026-06-06 (Day 7 — `generated-emoticons` bucket·생성 결과 경로 반영)
 
 ## 스택 전제
 
@@ -22,14 +23,18 @@
 
 ## 1. Storage 사용 목적
 
-사용자가 이모티콘 생성을 위해 업로드한 **기준 이미지**를 Supabase Storage에 저장한다.  
-저장된 파일은 사용자별로 분리되어야 하며, 다른 사용자의 업로드 파일에 접근할 수 없어야 한다.
+| 용도 | Bucket | 설명 |
+|------|--------|------|
+| 기준 이미지 업로드 | `user-uploads` | 사용자가 생성 전 업로드한 원본 |
+| **생성 결과** | **`generated-emoticons`** | **AI가 생성한 이모티콘 PNG** (Day 7) |
+
+저장된 파일은 사용자별로 분리되어야 하며, 다른 사용자의 파일에 접근할 수 없어야 한다.
 
 ---
 
 ## 2. Bucket 설정
 
-이미지 업로드에 사용하는 bucket은 다음과 같다.
+### 2.1 `user-uploads` (기준 이미지)
 
 | 항목 | 값 |
 | ----------- | --------------------------------------- |
@@ -38,21 +43,57 @@
 | 최대 파일 크기 | 5MB |
 | 허용 MIME 타입 | `image/png`, `image/jpeg`, `image/webp` |
 
-`user-uploads` bucket은 **private**으로 생성한다.  
-파일 조회가 필요한 경우에는 추후 백엔드에서 로그인 사용자를 확인한 뒤 **signed URL**을 발급하는 방식으로 처리한다.
+`user-uploads` bucket은 **private**으로 생성한다.
 
 | 항목 | Day 4 구현 |
 |------|------------|
 | 환경변수 | `SUPABASE_UPLOAD_BUCKET` (backend `.env`, 기본값 `user-uploads`) |
 | 업로드 | `supabaseAdmin.storage.from(bucket).upload(...)` |
-| 허용 확장자 (업로드 검증) | `.png`, `.jpg`, `.jpeg`, `.webp` |
+| API | `POST /api/uploads/image` |
 | Dashboard | Storage에서 `user-uploads` 버킷 사전 생성 필요 |
 
-> 이후 단계: 생성 결과용 `generated` bucket 추가 예정.
+### 2.2 `generated-emoticons` (생성 결과)
+
+| 항목 | 값 |
+| ----------- | --------------------------------------- |
+| Bucket name | `generated-emoticons` |
+| Public 여부 | **Private (권장)** |
+| 업로드 주체 | backend service role only |
+| API | `POST /api/generations` |
+| contentType | `image/png` (기본) |
+
+**권장 전체 경로 (개념):**
+
+```txt
+generated-emoticons/{user_id}/{generation_id}.png
+```
+
+**Supabase object key** (bucket 이름 **미포함**):
+
+```txt
+{user_id}/{generation_id}.png
+```
+
+예시:
+
+```txt
+3f4c9f1e-1234-4567-89ab-111122223333/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png
+```
+
+| 항목 | Day 7 구현 |
+|------|------------|
+| 업로드 | `backend/src/services/storage.service.js` → `uploadGeneratedEmoticon()` |
+| `upsert` | `false` — 동일 `generation_id` 중복 저장 방지 |
+| Read | private — backend가 **signed URL** 발급 후 `generated_image_url`에 저장 |
+| Dashboard | Storage에서 `generated-emoticons` 버킷 사전 생성 필요 |
+
+프론트는 Storage에 **직접 쓰지 않습니다.** 미리보기는 API 응답의 `generatedImageUrl`(signed URL)을 사용합니다.
 
 ---
 
 ## 3. 저장 경로 규칙
+
+### 3.1 `user-uploads`
 
 업로드 이미지는 사용자 ID를 기준으로 분리하여 저장한다.
 
@@ -66,9 +107,21 @@
 3f4c9f1e-1234-4567-89ab-111122223333/1780000000000-a1b2c3d4-1111-2222-3333-abcdefabcdef.jpg
 ```
 
+### 3.2 `generated-emoticons`
+
+생성 결과 PNG는 **`emoticon_generations.id`** (= `generation_id`)를 파일명에 사용한다.
+
+```txt
+{user_id}/{generation_id}.png
+```
+
+- `user_id`: `req.user.id` (JWT 검증값)
+- `generation_id`: `createGeneratingRecord` INSERT 시 발급된 UUID
+- bucket 이름은 object key에 **포함하지 않음**
+
 ---
 
-## 4. 경로 구성 요소
+## 4. 경로 구성 요소 (`user-uploads`)
 
 | 구성 요소 | 설명 |
 | ----------- | -------------------------------- |
@@ -142,28 +195,14 @@ Storage 업로드는 다음 순서로 처리한다.
 
 ## 8. 추후 확장
 
-생성 기록 또는 갤러리 기능과 연결할 때는 Storage path를 DB 테이블에 저장한다.
+`user-uploads` 업로드 결과는 프론트 상태·`original_image_url`로 연결한다.
 
-예상 저장 필드:
+`generated-emoticons` object path는 `emoticon_generations.generated_image_url`(signed URL)과 같은 `generation_id` row에 연결한다.
 
-| 필드 | 설명 |
+| 필드 (DB) | Storage 연계 |
 | ------------ | ----------------- |
-| `user_id` | 파일 소유자 |
-| `bucket` | Storage bucket 이름 |
-| `path` | Storage 내부 파일 경로 |
-| `mime_type` | 파일 MIME 타입 |
-| `size` | 파일 크기 |
-| `created_at` | 업로드 시각 |
-
-생성 기록(`generation_id`) 연동 시 Storage 경로 확장 예정:
-
-```txt
-user_id/{generation_id}/original.{ext}
-user_id/{generation_id}/generated.{ext}
-```
-
-Day 4는 `generation_id` 없이 **user_id 직하** 업로드만 수행한다.  
-DB 연동: `emoticon_generations.original_image_url` (`02-contracts/db-schema.md`)
+| `original_image_url` | `user-uploads` 업로드 URL (Day 4) |
+| `generated_image_url` | `generated-emoticons/{user_id}/{generation_id}.png` signed URL (Day 7) |
 
 ---
 
@@ -183,7 +222,7 @@ DB 연동: `emoticon_generations.original_image_url` (`02-contracts/db-schema.md
 
 ## 관련 문서
 
-- PRD: `01-prd/02-image-upload-preview.md`
+- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/05-image-generation.md`
 - API: `02-contracts/api-contract.md`
 - DB: `02-contracts/db-schema.md`
 - 보안: `04-security/api-key-policy.md`, `04-security/auth-rls-policy.md`

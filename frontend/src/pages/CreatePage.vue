@@ -5,6 +5,7 @@ import PromptForm from '../components/PromptForm.vue'
 import PromptRefiner from '../components/PromptRefiner.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import { supabase } from '../lib/supabase.js'
+import { createGeneration } from '../services/generation.service.js'
 import { isPromptFormComplete } from '../utils/inputValidation.js'
 
 const uploadedImage = ref(null)
@@ -16,6 +17,10 @@ const promptForm = ref({
 const storyPrompt = ref('')
 const finalPrompt = ref('')
 const promptTouched = ref(false)
+const isGenerating = ref(false)
+const generationId = ref('')
+const generatedImageUrl = ref('')
+const generationErrorMessage = ref('')
 
 const hasImage = computed(() => Boolean(uploadedImage.value))
 
@@ -43,6 +48,16 @@ const isFormComplete = computed(() =>
   })
 )
 
+const hasFinalPrompt = computed(() => Boolean(finalPrompt.value.trim()))
+
+const isGenerateDisabled = computed(
+  () => !isFormComplete.value || !hasFinalPrompt.value || isGenerating.value
+)
+
+const generateButtonLabel = computed(() =>
+  isGenerating.value ? '이미지 생성 중...' : '이미지 생성'
+)
+
 const imageHintMessage = computed(() => {
   if (hasImage.value) return ''
 
@@ -52,6 +67,11 @@ const imageHintMessage = computed(() => {
   if (!promptTouched.value && !hasPromptInput) return ''
 
   return '이미지를 먼저 업로드해 주세요.'
+})
+
+const finalPromptHintMessage = computed(() => {
+  if (hasFinalPrompt.value || !isFormComplete.value) return ''
+  return '프롬프트 구체화 후 최종 프롬프트를 확인해 주세요.'
 })
 
 function onUploaded(result) {
@@ -66,13 +86,37 @@ function onPromptInteraction() {
   promptTouched.value = true
 }
 
-function handleNextStep() {
-  console.log('Next step:', {
-    uploadedImage: uploadedImage.value,
-    prompt: { ...promptForm.value },
-    storyPrompt: storyPrompt.value,
-    finalPrompt: finalPrompt.value,
-  })
+async function handleGenerateImage() {
+  if (isGenerating.value) return
+
+  if (!finalPrompt.value.trim()) {
+    generationErrorMessage.value = 'finalPrompt는 필수값입니다.'
+    return
+  }
+
+  isGenerating.value = true
+  generationErrorMessage.value = ''
+
+  try {
+    const result = await createGeneration({
+      originalImageUrl: originalImageUrl.value || undefined,
+      emotion: promptForm.value.emotion,
+      motion: promptForm.value.motion,
+      inputText: promptForm.value.text,
+      storyPrompt: storyPrompt.value,
+      finalPrompt: finalPrompt.value,
+    })
+
+    generationId.value = result.id
+    generatedImageUrl.value = result.generatedImageUrl
+  } catch (err) {
+    generationErrorMessage.value =
+      err instanceof Error
+        ? err.message
+        : '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+  } finally {
+    isGenerating.value = false
+  }
 }
 </script>
 
@@ -108,15 +152,28 @@ function handleNextStep() {
         />
       </div>
 
+      <div v-if="generatedImageUrl" class="create-page__section">
+        <h2 class="create-page__section-title">3. 생성 결과</h2>
+        <div class="create-page__preview-wrap">
+          <img
+            :src="generatedImageUrl"
+            alt="생성된 이모티콘 미리보기"
+            class="create-page__preview"
+          />
+        </div>
+      </div>
+
       <div class="create-page__actions">
         <ErrorMessage :message="imageHintMessage" />
+        <ErrorMessage :message="finalPromptHintMessage" />
+        <ErrorMessage :message="generationErrorMessage" />
         <button
           type="button"
           class="create-page__next-btn"
-          :disabled="!isFormComplete"
-          @click="handleNextStep"
+          :disabled="isGenerateDisabled"
+          @click="handleGenerateImage"
         >
-          다음 단계
+          {{ generateButtonLabel }}
         </button>
       </div>
     </div>
@@ -221,6 +278,21 @@ function handleNextStep() {
   background: var(--social-bg);
   border-color: var(--border);
   box-shadow: none;
+}
+
+.create-page__preview-wrap {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+.create-page__preview {
+  display: block;
+  width: 100%;
+  max-height: min(60vh, 360px);
+  object-fit: contain;
 }
 
 @media (max-width: 480px) {

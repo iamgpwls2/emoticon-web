@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "setup:day7": "node scripts/setup-day7-supabase.js",
+    "migrate:day7": "node scripts/apply-day7-status-migration.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
@@ -17,6 +19,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "pg": "^8.16.0"
   }
 }

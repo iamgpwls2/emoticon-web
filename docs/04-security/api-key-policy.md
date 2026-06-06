@@ -10,6 +10,7 @@
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 3 — Supabase·Backend 인증·외부 API 규칙 반영)
 - 2026-06-06 (OpenAI API key 관리 정책 상세화)
+- 2026-06-06 (Day 7 — `IMAGE_GENERATION_API_KEY` · 생성 Storage 정책 반영)
 
 ## 스택 전제
 
@@ -50,8 +51,8 @@ RLS를 우회할 수 있으므로 **backend에서만** 사용합니다.
 **사용 위치:**
 
 - backend 환경변수 (`backend/.env`)
-- 서버 내부 관리자 작업
-- Storage 또는 DB 서버 작업 중 필요한 경우
+- 서버 내부 관리자 작업 (Storage 업로드, `emoticon_generations` INSERT/UPDATE)
+- `generated-emoticons` · `user-uploads` bucket 쓰기 (`supabaseAdmin`)
 
 **금지 사항:**
 
@@ -156,13 +157,89 @@ LLM_MODEL=gpt-4o-mini
 
 ---
 
-## Image API Key (예정)
+## Image generation API key
 
-이미지 생성 API key도 OpenAI key와 동일하게 **backend에서만** 관리합니다.
+외부 **이미지 생성 API key**(환경변수명: **`IMAGE_GENERATION_API_KEY`**)는 OpenAI LLM key와 동일하게 **backend에서만** 관리합니다.  
+`POST /api/generations` 처리 시 `backend/src/services/imageGeneration.service.js`가 외부 Images API를 호출합니다.
 
-- frontend는 backend API만 호출
-- `requireAuth` 이후 서버에서 외부 API 호출
-- 환경변수 예시: `IMAGE_API_KEY` 등 — `backend/.env` 전용, `.env.example`에는 변수명만
+### 저장 위치
+
+| 위치 | 허용 |
+|------|------|
+| `backend/.env` | ✅ **유일한 저장 위치** |
+| `frontend/.env` | ❌ **금지** |
+| `VITE_*` 환경변수 | ❌ **금지** |
+| Vue / JS / TS 소스 코드 | ❌ **금지** |
+| Git 저장소 | ❌ **금지** |
+
+1. **`IMAGE_GENERATION_API_KEY`는 `backend/.env`에만 저장한다.**
+2. **frontend 코드·frontend env에 노출하지 않는다.**  
+   `VITE_IMAGE_GENERATION_API_KEY` 등 `VITE_` 접두사 등록 금지.
+3. **Vue 코드에 key를 작성하지 않는다.** (하드코딩·주석·테스트 값 포함 전부 금지)
+
+### 호출 경로
+
+4. **외부 이미지 생성 API 호출은 backend에서만 수행한다.**  
+   frontend는 `POST /api/generations`만 호출한다.
+
+```txt
+Browser → frontend/src/services/generation.service.js
+       → backend POST /api/generations (Bearer JWT)
+       → backend/src/services/imageGeneration.service.js
+       → 외부 Images API (server-only)
+       → backend/src/services/storage.service.js (supabaseAdmin, service role)
+       → backend/src/services/generation.service.js (DB)
+```
+
+- frontend: `createGeneration()` — `Authorization: Bearer {access_token}` 만 전송
+- backend: `requireAuth` → `validateCreateGeneration` → image generate → Storage upload → DB update
+- API endpoint URL(`IMAGE_GENERATION_API_URL`)도 **backend env·코드에만** 존재
+
+### Supabase service role key (생성 Storage)
+
+5. **`generated-emoticons` bucket 업로드·signed URL 발급**은 `supabaseAdmin`(service role)으로만 수행한다.  
+   service role key는 **backend 전용** — frontend·`VITE_*`·응답 JSON·로그에 포함하지 않는다.
+
+### 에러 응답·로깅
+
+6. **backend는 이미지 생성 API 실패 시 민감정보를 클라이언트에 반환하지 않는다.**
+
+클라이언트에 **포함 금지** 항목:
+
+- `IMAGE_GENERATION_API_KEY` 값
+- 외부 provider 원본 에러 body
+- service role key
+- stack trace
+
+클라이언트 응답 예시:
+
+```json
+{
+  "message": "이모티콘 생성에 실패했습니다. 다시 시도해 주세요."
+}
+```
+
+### 환경변수 (backend 전용)
+
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `IMAGE_GENERATION_API_KEY` | Yes | 외부 Images API key. 미설정 시 500 |
+| `IMAGE_GENERATION_MODEL` | No | 기본값 `dall-e-3` (`imageGeneration.service.js`) |
+| `IMAGE_GENERATION_API_URL` | No | 기본값 OpenAI Images endpoint |
+
+```bash
+# backend/.env.example — placeholder만
+IMAGE_GENERATION_API_KEY=your-image-generation-api-key
+IMAGE_GENERATION_MODEL=dall-e-3
+IMAGE_GENERATION_API_URL=https://api.openai.com/v1/images/generations
+```
+
+### 금지 사항 요약
+
+- frontend에서 외부 Images API URL 직접 `fetch`
+- `VITE_IMAGE_GENERATION_API_KEY` 등 `VITE_` 접두사 등록
+- frontend env·번들을 통한 key 노출
+- compose YAML / Dockerfile / README에 실제 key 기록
 
 ---
 
@@ -231,11 +308,16 @@ git status   # .env 가 staged 되지 않았는지
 |----------|-----------|
 | `frontend/src/lib/supabase.js` | publishable / anon |
 | `frontend/src/services/prompt.service.js` | `POST /api/prompts/refine` 호출 (OpenAI 직접 호출 없음) |
+| `frontend/src/services/generation.service.js` | `POST /api/generations` 호출 (Images API 직접 호출 없음) |
 | `backend/src/config/env.js` | URL, anon/publishable, service role 로드·필수 검증 |
 | `backend/src/middlewares/auth.middleware.js` | anon 클라이언트 + Bearer JWT |
 | `backend/src/services/supabase.service.js` | `supabase` (anon), `supabaseAdmin` (service role) |
 | `backend/src/services/llm.service.js` | `LLM_API_KEY` → OpenAI Chat Completions (server-only) |
+| `backend/src/services/imageGeneration.service.js` | `IMAGE_GENERATION_API_KEY` → Images API (server-only) |
+| `backend/src/services/storage.service.js` | `supabaseAdmin` → `generated-emoticons` upload · signed URL |
+| `backend/src/services/generation.service.js` | `emoticon_generations` CRUD (service role) |
 | `backend/src/controllers/prompt.controller.js` | 실패 시 고정 500 메시지, key·stack 미노출 |
+| `backend/src/controllers/generation.controller.js` | 실패 시 `failed` UPDATE + 고정 500 메시지 |
 
 ---
 

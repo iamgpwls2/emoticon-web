@@ -10,6 +10,7 @@
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 4 — `POST /api/uploads/image` 명세 반영)
 - 2026-06-06 (Day 6 — `POST /api/prompts/refine` 명세 반영)
+- 2026-06-06 (Day 7 — `POST /api/generations` 명세 반영)
 
 ## 스택 전제
 
@@ -39,7 +40,7 @@
 | GET | `/api/auth/me` | Bearer | 3 | 현재 사용자 |
 | **POST** | **`/api/uploads/image`** | **Bearer** | **4** | **이미지 업로드 → Supabase Storage** |
 | **POST** | **`/api/prompts/refine`** | **Bearer** | **6** | **LLM 프롬프트 정제** |
-| — | Image generation | Bearer | 이후 | 이미지 생성 |
+| **POST** | **`/api/generations`** | **Bearer** | **7** | **이미지 생성 · DB·Storage 저장** |
 | — | Gallery list | Bearer | 이후 | 갤러리 목록 |
 | — | Delete | Bearer | 이후 | 삭제 |
 | — | Download | Bearer | 이후 | 다운로드 |
@@ -424,6 +425,194 @@ Middleware chain: `requireAuth` → `validatePromptRefine` → `refinePromptCont
 
 ---
 
+## POST /api/generations
+
+로그인한 사용자가 `finalPrompt` 기반으로 **이모티콘 이미지를 생성**하고, 결과를 Supabase Storage·`emoticon_generations` 테이블에 저장한다.
+
+외부 이미지 생성 API Key는 **backend 전용** — frontend는 본 엔드포인트만 호출한다. (`04-security/api-key-policy.md`)
+
+---
+
+### 1. Endpoint
+
+```http
+POST /api/generations
+```
+
+---
+
+### 2. 인증
+
+인증이 필요하다.
+
+프론트엔드는 Supabase Auth session에서 access token을 가져와 Authorization header에 포함해야 한다.
+
+```http
+Authorization: Bearer <access_token>
+```
+
+인증 토큰이 없거나 유효하지 않으면 `401 Unauthorized`를 반환한다.
+
+---
+
+### 3. Request Body
+
+`Content-Type: application/json`
+
+```json
+{
+  "originalImageUrl": "https://example.com/image.png",
+  "emotion": "happy",
+  "motion": "wave",
+  "inputText": "안녕!",
+  "storyPrompt": "...",
+  "finalPrompt": "..."
+}
+```
+
+Request 예시:
+
+```bash
+curl -X POST http://localhost:4000/api/generations \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "emotion": "happy",
+    "motion": "wave",
+    "inputText": "안녕!",
+    "storyPrompt": "A cheerful emoticon scene...",
+    "finalPrompt": "A cute sticker character waving..."
+  }'
+```
+
+> 프론트는 `VITE_API_BASE_URL`을 사용한다. backend에 직접 호출할 때는 `http://localhost:4000`을 사용한다.
+
+---
+
+### 4. Required Fields
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `emotion` | string | 감정. trim 후 1자 이상 |
+| `motion` | string | 모션. trim 후 1자 이상 |
+| `inputText` | string | 이모티콘 텍스트. trim 후 1자 이상, 최대 500자 |
+| `storyPrompt` | string | LLM 스토리 프롬프트. trim 후 1자 이상 |
+| **`finalPrompt`** | string | **이미지 생성 API에 전달할 최종 프롬프트. trim 후 1자 이상 (필수)** |
+
+---
+
+### 5. Optional Fields
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `originalImageUrl` | string | 업로드된 원본 이미지 URL. 생략 가능 |
+
+---
+
+### 6. Success Response 201
+
+#### Status
+
+```http
+201 Created
+```
+
+#### Body
+
+```json
+{
+  "id": "3f4c9f1e-1234-4567-89ab-111122223333",
+  "generatedImageUrl": "https://...supabase.co/storage/v1/object/sign/generated-emoticons/...",
+  "status": "completed"
+}
+```
+
+#### Response 필드
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `id` | string (uuid) | `emoticon_generations.id` |
+| `generatedImageUrl` | string | 생성 결과 signed URL (private bucket) |
+| `status` | string | `completed` |
+
+---
+
+### 7. Error Response
+
+#### 400 Bad Request
+
+**`finalPrompt` 누락** 및 기타 필수 필드 검증 실패 시 반환한다.
+
+```json
+{
+  "message": "입력값을 확인해 주세요.",
+  "errors": [
+    {
+      "field": "finalPrompt",
+      "message": "finalPrompt는 필수값입니다."
+    }
+  ]
+}
+```
+
+#### 401 Unauthorized
+
+로그인하지 않았거나 인증 토큰이 유효하지 않은 경우 반환한다.
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Authorization header is required."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Invalid or expired access token."
+  }
+}
+```
+
+#### 500 Internal Server Error
+
+이미지 생성 API 오류, Storage 업로드 실패, `IMAGE_GENERATION_API_KEY` 미설정, DB 갱신 실패 등 서버 내부 처리 중 문제가 발생한 경우 반환한다.  
+실패 시 backend는 해당 row를 `status='failed'`로 갱신한다.
+
+```json
+{
+  "message": "이모티콘 생성에 실패했습니다. 다시 시도해 주세요."
+}
+```
+
+> 500 응답에 이미지 생성 API Key·service role key·vendor raw 응답은 **포함하지 않는다**.
+
+---
+
+### Frontend / Backend 처리 (Day 7)
+
+| 구분 | 경로 |
+|------|------|
+| Frontend Service | `frontend/src/services/generation.service.js` → `createGeneration()` |
+| Frontend Page | `frontend/src/pages/CreatePage.vue` |
+| Backend route | `backend/src/routes/generation.routes.js` |
+| Backend controller | `backend/src/controllers/generation.controller.js` |
+| Validation | `backend/src/validators/generation.validator.js` |
+| Image API | `backend/src/services/imageGeneration.service.js` |
+| Storage | `backend/src/services/storage.service.js` |
+| DB | `backend/src/services/generation.service.js` |
+
+Middleware chain: `requireAuth` → `validateCreateGeneration` → `createGenerationController`
+
+Backend 처리 순서: `generating` INSERT → 이미지 생성 → Storage 업로드 → `completed` | `failed` UPDATE
+
+Storage path: `02-contracts/storage-policy.md` — object key `{user_id}/{generation_id}.png`
+
+---
+
 ## 상태 코드 규칙
 
 | 코드 | 용도 |
@@ -453,6 +642,7 @@ Middleware chain: `requireAuth` → `validatePromptRefine` → `refinePromptCont
 
 - PRD (업로드): `01-prd/02-image-upload-preview.md`
 - PRD (LLM 정제): `01-prd/04-llm-prompt-refine.md`
+- PRD (이미지 생성): `01-prd/05-image-generation.md`
 - Storage: `02-contracts/storage-policy.md`
 - 에러: `02-contracts/error-response.md`
 - 보안: `04-security/api-key-policy.md`, `04-security/auth-rls-policy.md`

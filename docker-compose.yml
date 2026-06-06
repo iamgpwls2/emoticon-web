@@ -10,6 +10,8 @@ services:
     environment:
       PORT: "4000"
       FRONTEND_ORIGIN: "http://localhost:5173"
+    # LLM_*, IMAGE_GENERATION_* 등 server-only secret·설정은 compose에 하드코딩하지 않음.
+    # backend/.env.example 참고 → cp backend/.env.example backend/.env 후 값 설정.
     env_file:
       - ./backend/.env
     volumes:

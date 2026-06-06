@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 3 — `emoticon_generations` 본문 반영)
+- 2026-06-06 (Day 7 — `status` 값 `generating` · 생성 파이프라인 반영)
 
 ## 스택 전제
 
@@ -34,7 +35,7 @@
 모든 데이터는 `user_id`를 기준으로 분리되며, `auth.users(id)`를 참조합니다.
 
 - 업로드 원본 URL·사용자 입력(감정/동작/텍스트)·LLM·이미지 API 프롬프트·결과 URL을 한 row에 연결
-- `status`로 비동기 생성 파이프라인(`pending` → `processing` → `completed` | `failed`) 추적
+- `status`로 생성 파이프라인(`generating` → `completed` | `failed`) 추적
 - 갤러리 목록·삭제·다운로드 API의 DB 기준 테이블 (`01-prd/05-image-generation.md`, `07-gallery-delete.md`)
 
 ### 컬럼 정의
@@ -43,29 +44,40 @@
 |------|------|----------:|------|
 | `id` | `uuid` | No | 생성 기록 고유 ID. PK, `gen_random_uuid()` 기본값 |
 | `user_id` | `uuid` | No | Supabase Auth 사용자 ID, `auth.users(id)` 참조 |
-| `original_image_url` | `text` | Yes | 사용자가 업로드한 원본 이미지 URL |
-| `generated_image_url` | `text` | Yes | 생성 완료된 이모티콘 이미지 URL |
+| `original_image_url` | `text` | Yes | 사용자가 업로드한 원본 이미지 URL (참조·감사용) |
+| `generated_image_url` | `text` | Yes | **이미지 생성 성공 시** Storage signed URL 등 결과 이미지 URL. `status='completed'`일 때 설정 |
 | `emotion` | `text` | Yes | 사용자가 입력한 감정 |
 | `motion` | `text` | Yes | 사용자가 입력한 동작 |
 | `input_text` | `text` | Yes | 사용자가 입력한 텍스트 |
 | `story_prompt` | `text` | Yes | LLM이 구체화한 스토리/설명 프롬프트 |
 | `final_prompt` | `text` | Yes | 이미지 생성 API에 전달한 최종 프롬프트 |
-| `status` | `text` | No | 생성 상태. 기본값 `pending` |
-| `error_message` | `text` | Yes | 실패 시 사용자 또는 개발자 확인용 오류 메시지 |
+| `status` | `text` | No | 생성 상태. Day 7 MVP: `generating` · `completed` · `failed` |
+| `error_message` | `text` | Yes | **생성 실패 시** 원인 요약(사용자·개발자 확인용). API key·vendor raw 오류 미포함. `status='failed'`일 때 설정 |
 | `created_at` | `timestamptz` | No | 생성 기록 생성 시각. `now()` 기본값 |
 | `updated_at` | `timestamptz` | No | 생성 기록 수정 시각. status·URL 변경 시 갱신 |
 
-### `status` 값
+### `status` 값 (Day 7 MVP)
 
 | 값 | 의미 |
 |----|------|
-| `pending` | 생성 요청 저장 완료, 처리 전 |
-| `processing` | 생성 처리 중 |
-| `completed` | 생성 완료 |
-| `failed` | 생성 실패 |
+| `generating` | `POST /api/generations` 수신 후 INSERT. 이미지 생성·Storage 업로드 처리 중 |
+| `completed` | 생성·업로드 성공. `generated_image_url` 설정 |
+| `failed` | 이미지 생성 또는 Storage 업로드 실패. `error_message` 설정 |
 
-상태 전이(일반): `pending` → `processing` → `completed` | `failed`  
-`completed` 시 `generated_image_url` 설정, `failed` 시 `error_message` 참고.
+상태 전이: `generating` → `completed` | `failed`  
+요청 시작 시 INSERT(`generating`) → 성공/실패 UPDATE.
+
+> 초안 DDL의 `pending` · `processing`은 Day 7 구현에서 사용하지 않습니다. DB CHECK 제약은 `generating`을 포함하도록 마이그레이션합니다.
+
+### `error_message` · `generated_image_url`
+
+| 컬럼 | 설정 시점 | 내용 |
+|------|-----------|------|
+| `generated_image_url` | `markGenerationCompleted` | `generated-emoticons` bucket object의 signed URL |
+| `error_message` | `markGenerationFailed` | 안전한 실패 요약 (예: `Image generation request failed.`) |
+| `error_message` | `markGenerationCompleted` | `null`로 초기화 |
+
+모든 UPDATE는 `.eq('id', generationId).eq('user_id', userId)`로 **본인 record만** 갱신합니다.
 
 ### 데이터 분리 기준
 
@@ -92,8 +104,8 @@ create table public.emoticon_generations (
   input_text text,
   story_prompt text,
   final_prompt text,
-  status text not null default 'pending'
-    check (status in ('pending', 'processing', 'completed', 'failed')),
+  status text not null default 'generating'
+    check (status in ('generating', 'completed', 'failed')),
   error_message text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -121,7 +133,7 @@ create trigger emoticon_generations_updated_at
 ## RLS · Storage 연계
 
 - 테이블 RLS: `04-security/auth-rls-policy.md`
-- Storage 경로 규칙: `02-contracts/storage-policy.md` (`user_id/{generation_id}/...`)
+- Storage 경로 규칙: `02-contracts/storage-policy.md` — 업로드 `user-uploads`, 생성 결과 `generated-emoticons`
 - URL 컬럼(`original_image_url`, `generated_image_url`)은 Storage signed URL 또는 public URL을 저장할 수 있음
 
 ---
