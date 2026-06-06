@@ -7,13 +7,14 @@ import { refinePromptWithLLM } from '../services/llm.service.js';
 export async function refinePrompt(req, res) {
   const { emotion, motion, inputText, originalImageUrl } = req.body;
   const userId = req.user?.id;
+  const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
 
   try {
     const { storyPrompt, finalPrompt } = await refinePromptWithLLM({
       emotion,
       motion,
       inputText,
-      originalImageUrl,
+      originalImageUrl: trimmedOriginalImageUrl,
     });
 
     return res.status(200).json({

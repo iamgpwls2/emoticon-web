@@ -38,6 +38,8 @@ const canRefine = computed(() =>
   )
 )
 
+const hasReferenceImage = computed(() => Boolean(props.originalImageUrl?.trim()))
+
 const isButtonDisabled = computed(() => !canRefine.value || loading.value)
 
 function handleFinalPromptInput() {
@@ -55,7 +57,7 @@ async function handleRefine() {
       emotion: props.emotion,
       motion: props.motion,
       inputText: props.inputText,
-      originalImageUrl: props.originalImageUrl || undefined,
+      originalImageUrl: props.originalImageUrl?.trim() || undefined,
     })
 
     storyPrompt.value = result.storyPrompt
@@ -88,6 +90,9 @@ async function handleRefine() {
     </p>
 
     <ErrorMessage :message="errorMessage" />
+    <p v-if="canRefine && !hasReferenceImage" class="prompt-refiner__hint">
+      원본 캐릭터 보존 품질을 위해 이미지 업로드 후 구체화하는 것을 권장합니다.
+    </p>
 
     <div v-if="storyPrompt" class="prompt-refiner__field">
       <label class="prompt-refiner__label">스토리 프롬프트</label>
@@ -159,6 +164,13 @@ async function handleRefine() {
 .prompt-refiner__loading {
   margin: 0;
   font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.prompt-refiner__hint {
+  margin: 0;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--text);
 }

@@ -60,5 +60,14 @@ export function validatePromptRefine(req, res, next) {
     return sendValidationError(res, errors);
   }
 
+  if (typeof originalImageUrl === 'string') {
+    const trimmedOriginalImageUrl = originalImageUrl.trim();
+    if (trimmedOriginalImageUrl) {
+      req.body.originalImageUrl = trimmedOriginalImageUrl;
+    } else {
+      delete req.body.originalImageUrl;
+    }
+  }
+
   next();
 }

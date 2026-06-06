@@ -36,7 +36,7 @@ const originalImageUrl = computed(() => {
   if (!bucket || !path) return ''
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-  return data.publicUrl
+  return data.publicUrl?.trim() || ''
 })
 
 const isFormComplete = computed(() =>

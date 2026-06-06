@@ -23,18 +23,23 @@ export async function refinePrompt({ emotion, motion, inputText, originalImageUr
     throw new Error('You must be signed in to refine a prompt.');
   }
 
+  const payload = {
+    emotion,
+    motion,
+    inputText,
+  };
+  const trimmedOriginalImageUrl = originalImageUrl?.trim();
+  if (trimmedOriginalImageUrl) {
+    payload.originalImageUrl = trimmedOriginalImageUrl;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/prompts/refine`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      emotion,
-      motion,
-      inputText,
-      originalImageUrl,
-    }),
+    body: JSON.stringify(payload),
   });
 
   let body;
