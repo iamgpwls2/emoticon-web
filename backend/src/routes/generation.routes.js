@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createGeneration as createGenerationController,
+  deleteGeneration as deleteGenerationController,
   getMyGenerations as getMyGenerationsController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
@@ -24,5 +25,11 @@ router.post(
   validateCreateGeneration,
   createGenerationController
 );
+
+/**
+ * DELETE /api/generations/:id
+ * /me 보다 뒤에 등록해 "me"가 id로 해석되지 않게 합니다.
+ */
+router.delete('/:id', requireAuth, deleteGenerationController);
 
 export default router;

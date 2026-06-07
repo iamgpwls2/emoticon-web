@@ -12,6 +12,7 @@
 - 2026-06-06 (Day 6 — `POST /api/prompts/refine` 명세 반영)
 - 2026-06-06 (Day 7 — `POST /api/generations` 명세 반영)
 - 2026-06-07 (Day 9 — `GET /api/generations/me` 명세 반영)
+- 2026-06-07 (Day 10 — `DELETE /api/generations/:id` 명세 반영)
 
 ## 스택 전제
 
@@ -43,7 +44,7 @@
 | **POST** | **`/api/prompts/refine`** | **Bearer** | **6** | **LLM 프롬프트 정제** |
 | **POST** | **`/api/generations`** | **Bearer** | **7** | **이미지 생성 · DB·Storage 저장** |
 | **GET** | **`/api/generations/me`** | **Bearer** | **9** | **내 생성 기록 목록 (pagination)** |
-| — | Delete | Bearer | 10 (예정) | 삭제 |
+| **DELETE** | **`/api/generations/:id`** | **Bearer** | **10** | **내 생성 기록 단건 삭제** |
 | — | Download | Bearer | 이후 | 다운로드 |
 
 ---
@@ -760,6 +761,126 @@ Middleware chain: `requireAuth` → `getMyGenerations`
 
 ---
 
+## DELETE /api/generations/:id
+
+로그인 사용자의 **본인** `emoticon_generations` row 1건을 삭제합니다.  
+연결된 `generated-emoticons` Storage object도 backend에서 삭제합니다.  
+**original upload image**(`user-uploads`)는 Day 10 MVP에서 삭제하지 않습니다.
+
+> 라우트 등록 순서: **`GET /me`는 `DELETE /:id`보다 먼저** 등록합니다. (`generation.routes.js`)
+
+---
+
+### 1. Endpoint
+
+```http
+DELETE /api/generations/:id
+```
+
+---
+
+### 2. 인증
+
+`Authorization: Bearer <access_token>` 필수. 미인증·무효 토큰 → `401`.
+
+---
+
+### 3. Path Parameters
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | uuid | 삭제할 `emoticon_generations.id` |
+
+예시:
+
+```bash
+curl -i -X DELETE "http://localhost:4000/api/generations/GENERATION_ID" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+```
+
+> 클라이언트는 body·query에 `userId`를 보내지 않습니다 — server는 `req.user.id`만 사용.
+
+---
+
+### 4. Success Response 200
+
+#### Body
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
+### 5. Error Response
+
+#### 401 Unauthorized
+
+로그인하지 않았거나 인증 토큰이 유효하지 않은 경우 반환한다.
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Authorization header is required."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Invalid or expired access token."
+  }
+}
+```
+
+#### 404 Not Found
+
+`id`가 존재하지 않거나, **다른 사용자 소유**인 경우 반환한다.  
+두 경우 모두 동일한 메시지로 응답해 **id 존재 여부를 노출하지 않습니다**.
+
+```json
+{
+  "message": "이모티콘을 찾을 수 없습니다."
+}
+```
+
+#### 500 Internal Server Error
+
+DB 삭제 실패 등 서버 내부 처리 중 문제가 발생한 경우 반환한다.
+
+```json
+{
+  "message": "이모티콘 삭제에 실패했습니다. 다시 시도해 주세요."
+}
+```
+
+> Storage object 삭제 실패는 `console.warn`만 남기고 DB 삭제 흐름을 우선합니다. (`02-contracts/storage-policy.md`)
+
+---
+
+### Frontend / Backend 처리 (Day 10)
+
+| 구분 | 경로 |
+|------|------|
+| Frontend Service | `frontend/src/services/generation.service.js` → `deleteGeneration()` |
+| Frontend Page | `frontend/src/pages/GalleryPage.vue` |
+| Frontend Card | `frontend/src/components/EmoticonCard.vue` |
+| Backend route | `backend/src/routes/generation.routes.js` — `DELETE /:id` |
+| Backend controller | `generation.controller.js` → `deleteGeneration` |
+| Backend service | `generation.service.js` → `deleteMyGeneration` |
+| Storage | `storage.service.js` → `deleteGeneratedEmoticonByUrl` |
+
+Middleware chain: `requireAuth` → `deleteGeneration`
+
+Backend 처리 순서: `id` + `user_id` 조회 → `generated_image_url` Storage 삭제 → DB row DELETE
+
+---
+
 ## 상태 코드 규칙
 
 | 코드 | 용도 |
@@ -790,6 +911,7 @@ Middleware chain: `requireAuth` → `getMyGenerations`
 - PRD (업로드): `01-prd/02-image-upload-preview.md`
 - PRD (LLM 정제): `01-prd/04-llm-prompt-refine.md`
 - PRD (이미지 생성): `01-prd/05-image-generation.md`
+- PRD (갤러리·삭제): `01-prd/07-gallery-delete.md`
 - Storage: `02-contracts/storage-policy.md`
 - 에러: `02-contracts/error-response.md`
 - 보안: `04-security/api-key-policy.md`, `04-security/auth-rls-policy.md`

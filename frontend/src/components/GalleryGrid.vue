@@ -14,7 +14,13 @@ defineProps({
     type: Number,
     default: 6,
   },
+  deletingId: {
+    type: String,
+    default: '',
+  },
 })
+
+defineEmits(['delete'])
 </script>
 
 <template>
@@ -47,6 +53,8 @@ defineProps({
       :input-text="item.inputText"
       :created-at="item.createdAt"
       :status="item.status"
+      :deleting="deletingId === item.id"
+      @delete="$emit('delete', $event)"
     />
   </div>
 </template>

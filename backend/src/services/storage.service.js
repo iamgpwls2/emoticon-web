@@ -203,3 +203,47 @@ export async function uploadGeneratedEmoticon(
 
   return { path, generatedImageUrl };
 }
+
+/**
+ * generated_image_url에서 generated-emoticons bucket object path를 추출해 삭제합니다.
+ * path 추출 실패·Storage 삭제 실패 시 console.warn만 남기고 throw하지 않습니다.
+ * original_image_url은 건드리지 않습니다.
+ *
+ * @param {string | null | undefined} generatedImageUrl
+ * @returns {Promise<void>}
+ */
+export async function deleteGeneratedEmoticonByUrl(generatedImageUrl) {
+  const trimmedUrl =
+    typeof generatedImageUrl === 'string' ? generatedImageUrl.trim() : '';
+  if (!trimmedUrl) {
+    return;
+  }
+
+  const storageRef = parseSupabaseStorageObjectUrl(trimmedUrl);
+  if (!storageRef) {
+    console.warn(
+      'Could not extract object path from generated image URL:',
+      trimmedUrl
+    );
+    return;
+  }
+
+  if (storageRef.bucket !== GENERATED_EMOTICONS_BUCKET) {
+    console.warn(
+      `Generated image URL bucket is not ${GENERATED_EMOTICONS_BUCKET}:`,
+      storageRef.bucket
+    );
+    return;
+  }
+
+  const { error } = await supabaseAdmin.storage
+    .from(GENERATED_EMOTICONS_BUCKET)
+    .remove([storageRef.path]);
+
+  if (error) {
+    console.warn(
+      'Failed to delete generated emoticon from storage:',
+      error.message
+    );
+  }
+}

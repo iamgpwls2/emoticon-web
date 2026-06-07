@@ -10,6 +10,7 @@
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 4 — `user-uploads` 버킷·업로드 경로 규칙 반영)
 - 2026-06-06 (Day 7 — `generated-emoticons` bucket·생성 결과 경로 반영)
+- 2026-06-07 (Day 10 — generated image 삭제 정책 반영)
 
 ## 스택 전제
 
@@ -187,8 +188,9 @@ Storage 업로드는 다음 순서로 처리한다.
 | 작업 | Day 4 |
 |------|-------|
 | Upload | backend service role (인증·검증 후) |
-| Read | private — signed URL 또는 backend API (이후) |
-| Delete | gallery/delete 단계에서 정의 (이후) |
+| Read | private — signed URL 또는 backend API |
+| Delete (generated) | **`DELETE /api/generations/:id`** — backend service role (Day 10) |
+| Delete (original) | Day 10 MVP **미삭제** — `user-uploads` 유지 |
 | Public URL | 사용하지 않음 |
 
 ---
@@ -206,10 +208,44 @@ Storage 업로드는 다음 순서로 처리한다.
 
 ---
 
-## 삭제 정책
+## 삭제 정책 (Day 10)
 
-- Day 4: 삭제 API 미구현
-- 이후: DB `emoticon_generations` 삭제 시 동일 `user_id` prefix Storage 오브젝트 연동 삭제
+### generated-emoticons — 삭제
+
+| 항목 | 규칙 |
+|------|------|
+| 트리거 | `DELETE /api/generations/:id` 성공 흐름 |
+| 주체 | **backend service role only** — 클라이언트 Storage 직접 삭제 **금지** |
+| 대상 | `emoticon_generations.generated_image_url`에 연결된 object |
+| bucket | `generated-emoticons` |
+| path 추출 | Supabase Storage URL(`/storage/v1/object/public|sign|authenticated/{bucket}/{path}`)에서 object key 파싱 |
+| 실패 처리 | path 추출·Storage 삭제 실패 시 `console.warn` — **DB 삭제는 계속** |
+
+구현: `backend/src/services/storage.service.js` → `deleteGeneratedEmoticonByUrl()`
+
+```txt
+generated_image_url (signed/public URL)
+  → parse bucket + object path
+  → supabaseAdmin.storage.from('generated-emoticons').remove([path])
+```
+
+### user-uploads (original) — MVP 유지
+
+| 항목 | Day 10 |
+|------|--------|
+| `original_image_url` | **삭제하지 않음** |
+| bucket | `user-uploads` |
+| 사유 | MVP 범위 — orphan original은 추후 정리 정책에서 정의 |
+
+### DB 연동 순서
+
+```txt
+1. id + req.user.id 로 row 조회
+2. generated_image_url → Storage object 삭제 (best effort)
+3. emoticon_generations row DELETE
+```
+
+> Day 4 업로드 API(`POST /api/uploads/image`)는 변경 없음.
 
 ---
 
@@ -222,7 +258,7 @@ Storage 업로드는 다음 순서로 처리한다.
 
 ## 관련 문서
 
-- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/05-image-generation.md`
+- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/05-image-generation.md`, `01-prd/07-gallery-delete.md`
 - API: `02-contracts/api-contract.md`
 - DB: `02-contracts/db-schema.md`
 - 보안: `04-security/api-key-policy.md`, `04-security/auth-rls-policy.md`

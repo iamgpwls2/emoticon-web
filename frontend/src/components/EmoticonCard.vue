@@ -30,7 +30,13 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  deleting: {
+    type: Boolean,
+    default: false,
+  },
 })
+
+const emit = defineEmits(['delete'])
 
 const imageLoadFailed = ref(false)
 
@@ -59,6 +65,17 @@ const metaLine = computed(() => {
 
 function onImageError() {
   imageLoadFailed.value = true
+}
+
+function handleDeleteClick() {
+  if (props.deleting) return
+
+  const confirmed = window.confirm(
+    '이 이모티콘을 삭제할까요?\n삭제하면 복구할 수 없습니다.'
+  )
+  if (!confirmed) return
+
+  emit('delete', props.id)
 }
 </script>
 
@@ -96,6 +113,18 @@ function onImageError() {
       >
         {{ formattedCreatedAt }}
       </time>
+    </div>
+
+    <div class="emoticon-card__actions">
+      <button
+        type="button"
+        class="emoticon-card__delete-btn"
+        :disabled="deleting"
+        :aria-busy="deleting"
+        @click="handleDeleteClick"
+      >
+        {{ deleting ? '삭제 중...' : '삭제' }}
+      </button>
     </div>
   </article>
 </template>
@@ -177,5 +206,50 @@ function onImageError() {
   font-size: 13px;
   line-height: 1.4;
   color: var(--text);
+}
+
+.emoticon-card__actions {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.emoticon-card__delete-btn {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s, opacity 0.2s;
+}
+
+.emoticon-card__delete-btn:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.14);
+  border-color: rgba(220, 38, 38, 0.55);
+}
+
+.emoticon-card__delete-btn:focus-visible {
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+}
+
+.emoticon-card__delete-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .emoticon-card__delete-btn {
+    font-size: 15px;
+  }
 }
 </style>

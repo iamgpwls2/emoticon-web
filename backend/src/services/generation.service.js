@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { deleteGeneratedEmoticonByUrl } from './storage.service.js';
 
 const EMOTICON_GENERATIONS_TABLE = 'emoticon_generations';
 const STATUS_GENERATING =
@@ -9,6 +10,12 @@ const STATUS_FAILED = 'failed';
 function createServiceError(message) {
   const error = new Error(message);
   error.isGenerationServiceError = true;
+  return error;
+}
+
+function createNotFoundError(message) {
+  const error = new Error(message);
+  error.isGenerationNotFoundError = true;
   return error;
 }
 
@@ -211,4 +218,43 @@ export async function markGenerationFailed({
   }
 
   return data;
+}
+
+/**
+ * 본인 소유 emoticon_generations 기록을 삭제합니다.
+ * generated-emoticons Storage 이미지만 삭제하고 original upload image는 유지합니다.
+ *
+ * @param {{ generationId: string, userId: string }} params
+ * @returns {Promise<void>}
+ */
+export async function deleteMyGeneration({ generationId, userId }) {
+  const resolvedGenerationId = assertNonEmptyString(generationId, 'generationId');
+  const resolvedUserId = assertNonEmptyString(userId, 'userId');
+
+  const { data, error } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .select('id, generated_image_url')
+    .eq('id', resolvedGenerationId)
+    .eq('user_id', resolvedUserId)
+    .maybeSingle();
+
+  if (error) {
+    handleSupabaseError('fetch for delete', error);
+  }
+
+  if (!data) {
+    throw createNotFoundError('Generation not found.');
+  }
+
+  await deleteGeneratedEmoticonByUrl(data.generated_image_url);
+
+  const { error: deleteError } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .delete()
+    .eq('id', resolvedGenerationId)
+    .eq('user_id', resolvedUserId);
+
+  if (deleteError) {
+    handleSupabaseError('delete', deleteError);
+  }
 }

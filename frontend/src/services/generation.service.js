@@ -164,3 +164,52 @@ export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
     hasMore: body.hasMore,
   };
 }
+
+/**
+ * backend DELETE /api/generations/:id 로 로그인 사용자의 생성 기록을 삭제합니다.
+ * @param {string} id
+ * @returns {Promise<{ success: boolean }>}
+ */
+export async function deleteGeneration(id) {
+  if (!isNonEmptyString(id)) {
+    throw new Error('Generation id is required.');
+  }
+
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('You must be signed in to delete an emoticon.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/generations/${id}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error('이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.');
+  }
+
+  if (!response.ok) {
+    const message =
+      body?.error?.message ||
+      body?.message ||
+      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.';
+    throw new Error(message);
+  }
+
+  return { success: body.success === true };
+}

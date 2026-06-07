@@ -3,7 +3,10 @@ import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import GalleryGrid from '../components/GalleryGrid.vue'
-import { fetchMyGenerations } from '../services/generation.service.js'
+import {
+  deleteGeneration,
+  fetchMyGenerations,
+} from '../services/generation.service.js'
 
 const PAGE_LIMIT = 12
 
@@ -14,6 +17,8 @@ const total = ref(0)
 const isLoading = ref(false)
 const isLoadingMore = ref(false)
 const errorMessage = ref('')
+const deleteErrorMessage = ref('')
+const deletingId = ref('')
 
 const isInitialLoading = () => isLoading.value && items.value.length === 0
 const isEmpty = () =>
@@ -67,6 +72,27 @@ function handleLoadMore() {
   loadGenerations({ nextPage: page.value + 1, append: true })
 }
 
+async function handleDelete(generationId) {
+  if (deletingId.value) return
+
+  deletingId.value = generationId
+  deleteErrorMessage.value = ''
+
+  try {
+    await deleteGeneration(generationId)
+    items.value = items.value.filter((item) => item.id !== generationId)
+    total.value = Math.max(0, total.value - 1)
+    deleteErrorMessage.value = ''
+  } catch (err) {
+    deleteErrorMessage.value =
+      err instanceof Error
+        ? err.message
+        : '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+  } finally {
+    deletingId.value = ''
+  }
+}
+
 onMounted(() => {
   loadGenerations({ nextPage: 1, append: false })
 })
@@ -117,7 +143,16 @@ onMounted(() => {
       </div>
 
       <template v-else-if="isSuccess()">
-        <GalleryGrid :items="items" />
+        <ErrorMessage
+          v-if="deleteErrorMessage"
+          :message="deleteErrorMessage"
+        />
+
+        <GalleryGrid
+          :items="items"
+          :deleting-id="deletingId"
+          @delete="handleDelete"
+        />
 
         <div v-if="hasMore" class="gallery-page__load-more">
           <button
