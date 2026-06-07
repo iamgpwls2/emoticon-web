@@ -10,6 +10,7 @@
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 5 — 생성 페이지 입력 UI MVP 기준 반영)
 - 2026-06-06 (Day 8 — 로딩·결과·다운로드 UI 기준 반영)
+- 2026-06-07 (Day 9 — 갤러리 UI 기준 반영)
 
 > 확정 디자인이 아닌 **MVP 기준**입니다. 이후 단계에서 시각 언어를 보강할 수 있습니다.
 
@@ -206,6 +207,60 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 
 ---
 
+## Day 9 — 갤러리 UI
+
+구현: `GalleryPage.vue`, `GalleryGrid.vue`, `EmoticonCard.vue`
+
+### 1. GalleryPage 레이아웃
+
+```txt
+[페이지 제목 + 안내 + 총 N개]
+├─ loading  → 로딩 문구 + skeleton grid
+├─ error    → ErrorMessage + [다시 시도]
+├─ empty    → 빈 상태 문구 + /generate 링크
+└─ success  → GalleryGrid + [더 보기] (hasMore일 때)
+```
+
+| 항목 | MVP 값 |
+|------|--------|
+| 컨테이너 | mobile `max-width: 100%`, desktop `960px` |
+| 페이지 패딩 | `32px 20px` (mobile `24px 16px`) |
+| 제목 | `36px` (mobile `28px`), 가운데 정렬 |
+| 섹션 gap | `20px` (mobile `16px`) |
+
+### 2. GalleryGrid 반응형
+
+| 뷰포트 | grid |
+|--------|------|
+| **Mobile** (`max-width: 640px`) | `grid-template-columns: 1fr` — **1열** |
+| **Desktop** (`min-width: 641px`) | `repeat(auto-fill, minmax(220px, 1fr))` |
+
+- gap: mobile `16px`, desktop `20px`
+- loading: shimmer skeleton 카드 6개
+
+### 3. EmoticonCard 표시 규칙
+
+| 영역 | 규칙 |
+|------|------|
+| 미리보기 | `aspect-ratio: 1`, `object-fit: contain`, `--code-bg` 카드 |
+| 메타 | `emotion · motion` (14px medium) |
+| 텍스트 | `inputText` (14px, `overflow-wrap: anywhere`) |
+| 날짜 | `<time datetime>` + `Intl.DateTimeFormat('ko-KR')` |
+| 이미지 없음 | placeholder — 「생성 중이거나 실패한 항목입니다.」 등 |
+
+### 4. empty / loading / error UI 문구
+
+| 상태 | 문구·UI |
+|------|---------|
+| **loading** | 「이모티콘 목록을 불러오는 중입니다...」 + skeleton |
+| **empty** | 「아직 생성한 이모티콘이 없습니다.」 + 「이모티콘 만들러 가기」 |
+| **error** | API/fallback 메시지 + 「다시 시도」 버튼 (`min-height 44px`) |
+| **더 보기** | 「더 보기」 / 진행 중 「불러오는 중...」, `hasMore === false` 시 숨김 |
+
+오류 스타일: Day 5 `ErrorMessage` / Day 8 action-error 톤과 동일 (`#dc2626`)
+
+---
+
 ## 공통 컴포넌트 (현재)
 
 | 컴포넌트 | 용도 |
@@ -215,10 +270,12 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 | `ErrorMessage` | 인라인 오류 메시지 |
 | `LoadingOverlay` | 생성 중 전역 로딩 |
 | `GenerationResult` | 결과 미리보기·비교·다운로드·재생성 |
+| `GalleryGrid` | 갤러리 카드 grid |
+| `EmoticonCard` | 갤러리 단일 카드 |
 
 ---
 
 ## 관련 문서
 
-- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`, `01-prd/06-generation-result-download.md`
+- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`, `01-prd/06-generation-result-download.md`, `01-prd/07-gallery-delete.md`
 - 전역 스타일: `frontend/src/style.css` (`--accent`, `--border` 등)

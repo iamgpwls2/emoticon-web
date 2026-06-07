@@ -87,3 +87,80 @@ export async function createGeneration({
     status: body.status,
   };
 }
+
+/**
+ * backend GET /api/generations/me 로 로그인 사용자의 생성 목록을 조회합니다.
+ * @param {{ page?: number, limit?: number }} [params]
+ * @returns {Promise<{
+ *   items: Array<{
+ *     id: string,
+ *     status: string,
+ *     originalImageUrl: string | null,
+ *     generatedImageUrl: string | null,
+ *     emotion: string | null,
+ *     motion: string | null,
+ *     inputText: string | null,
+ *     storyPrompt: string | null,
+ *     finalPrompt: string | null,
+ *     createdAt: string,
+ *     updatedAt: string,
+ *   }>,
+ *   page: number,
+ *   limit: number,
+ *   total: number,
+ *   hasMore: boolean,
+ * }>}
+ */
+export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('You must be signed in to view your emoticons.');
+  }
+
+  const query = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/generations/me?${query.toString()}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error('이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.');
+  }
+
+  if (!response.ok) {
+    const message =
+      body?.error?.message ||
+      body?.message ||
+      '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.';
+    throw new Error(message);
+  }
+
+  return {
+    items: body.items ?? [],
+    page: body.page,
+    limit: body.limit,
+    total: body.total,
+    hasMore: body.hasMore,
+  };
+}

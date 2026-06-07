@@ -1,11 +1,23 @@
 import {
   createGeneratingRecord,
+  listMyGenerations,
   markGenerationCompleted,
   markGenerationFailed,
 } from '../services/generation.service.js';
 import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
 import { applyCharacterPreservationGuards } from '../services/llm.service.js';
 import { uploadGeneratedEmoticon } from '../services/storage.service.js';
+
+const DEFAULT_LIST_LIMIT = 12;
+const MAX_LIST_LIMIT = 50;
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return parsed;
+}
 
 function toSafeErrorMessage(error) {
   if (error.isImageGenerationServiceError) {
@@ -15,6 +27,36 @@ function toSafeErrorMessage(error) {
     return 'Storage operation failed.';
   }
   return 'Generation pipeline failed.';
+}
+
+/**
+ * GET /api/generations/me
+ * req.user.id 기준으로 본인 생성 기록을 페이지네이션 조회합니다.
+ */
+export async function getMyGenerations(req, res) {
+  const userId = req.user.id;
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(
+    MAX_LIST_LIMIT,
+    parsePositiveInt(req.query.limit, DEFAULT_LIST_LIMIT)
+  );
+
+  try {
+    const { items, total } = await listMyGenerations({ userId, page, limit });
+
+    return res.status(200).json({
+      items,
+      page,
+      limit,
+      total,
+      hasMore: page * limit < total,
+    });
+  } catch (error) {
+    console.error(`getMyGenerations failed (user=${userId}):`, error.message);
+    return res.status(500).json({
+      message: '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.',
+    });
+  }
 }
 
 /**

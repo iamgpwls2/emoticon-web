@@ -32,6 +32,55 @@ function handleSupabaseError(action, error) {
   throw createServiceError(`Failed to ${action} generation record.`);
 }
 
+const MY_GENERATIONS_LIST_COLUMNS =
+  'id, status, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
+
+function mapGenerationListItem(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    originalImageUrl: row.original_image_url,
+    generatedImageUrl: row.generated_image_url,
+    emotion: row.emotion,
+    motion: row.motion,
+    inputText: row.input_text,
+    storyPrompt: row.story_prompt,
+    finalPrompt: row.final_prompt,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * 로그인 사용자의 emoticon_generations 목록을 created_at 최신순으로 조회합니다.
+ *
+ * @param {{ userId: string, page: number, limit: number }} params
+ * @returns {Promise<{ items: object[], total: number }>}
+ */
+export async function listMyGenerations({ userId, page, limit }) {
+  const resolvedUserId = assertNonEmptyString(userId, 'userId');
+  const resolvedPage = Number.isInteger(page) && page >= 1 ? page : 1;
+  const resolvedLimit = Number.isInteger(limit) && limit >= 1 ? limit : 12;
+  const from = (resolvedPage - 1) * resolvedLimit;
+  const to = from + resolvedLimit - 1;
+
+  const { data, error, count } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .select(MY_GENERATIONS_LIST_COLUMNS, { count: 'exact' })
+    .eq('user_id', resolvedUserId)
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    handleSupabaseError('list', error);
+  }
+
+  return {
+    items: (data ?? []).map(mapGenerationListItem),
+    total: count ?? 0,
+  };
+}
+
 /**
  * emoticon_generations 테이블에 생성 중 상태의 기록을 insert합니다.
  * backend controller에서만 호출하세요.

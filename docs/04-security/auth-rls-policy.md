@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 3 — `emoticon_generations` RLS · Backend 인증 미들웨어 반영)
+- 2026-06-07 (Day 9 — 갤러리 목록 조회 보안 정책 반영)
 
 ## 스택 전제
 
@@ -129,6 +130,45 @@ create policy "emoticon_generations_delete_own"
 
 ---
 
+## Day 9 — 갤러리 목록 조회 (`GET /api/generations/me`)
+
+### 흐름
+
+```txt
+Client  Authorization: Bearer {access_token}
+   ↓
+requireAuth  →  req.user.id 확정 (JWT 검증)
+   ↓
+listMyGenerations  →  .eq('user_id', req.user.id)  +  created_at DESC  +  pagination
+```
+
+### 필수 규칙
+
+| 항목 | 규칙 |
+|------|------|
+| 인증 | `requireAuth` **선행** — 미통과 시 `401` |
+| userId 출처 | **`req.user.id`만** — query/body/header의 `userId` **무시·미수신** |
+| DB 필터 | service role 사용 시 `.eq('user_id', req.user.id)` **필수** |
+| 타 사용자 접근 | 다른 사용자 JWT로도 **본인 row만** 반환 (필터는 토큰 `sub` 기준) |
+| RLS | anon+JWT 직접 SELECT 시 `auth.uid() = user_id` · backend는 service role + app filter |
+
+### 금지
+
+- 클라이언트가 `?userId=` 로 타 사용자 목록 요청 ❌ (서버는 해당 파라미터를 사용하지 않음)
+- service role `.select()`에 `user_id` 필터 없음 ❌
+
+### 이중 방어 (RLS + Backend)
+
+| 계층 | 역할 |
+|------|------|
+| **RLS** | Supabase 클라이언트(사용자 JWT) 직접 접근 시 `auth.uid() = user_id` |
+| **Backend** | `supabaseAdmin` + `.eq('user_id', req.user.id)` — RLS bypass 보완 |
+
+갤러리 API는 **backend 경유만** 사용합니다 (frontend → `fetchMyGenerations` → Express).  
+Storage signed URL은 응답 `generatedImageUrl`에 포함되나, **목록 API 자체는 DB row만** 필터링합니다.
+
+---
+
 ## 테스트 시나리오 (최소)
 
 1. 사용자 A로 로그인 → A의 `emoticon_generations`만 SELECT 가능
@@ -136,6 +176,8 @@ create policy "emoticon_generations_delete_own"
 3. INSERT 시 `user_id`를 B로 넣고 A JWT로 요청 → INSERT 거부
 4. Backend `GET /api/auth/me` + Bearer → `user.id`가 JWT `sub`와 일치
 5. Backend service role 쿼리에서 `user_id` 필터 누락 시 **코드 리뷰/테스트로 차단** (RLS가 막지 않음)
+6. `GET /api/generations/me` — 사용자 A JWT → A의 row만 · `total`/`items`에 B row 없음
+7. `GET /api/generations/me` — Authorization 없음 / `bearer`(소문자) / 만료 token → `401`
 
 ---
 

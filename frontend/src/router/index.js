@@ -3,7 +3,7 @@ import HelloWorld from '../components/HelloWorld.vue'
 import RegisterPage from '../views/RegisterPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import CreatePage from '../pages/CreatePage.vue'
-import GalleryPage from '../views/GalleryPage.vue'
+import GalleryPage from '../pages/GalleryPage.vue'
 import { supabase } from '../lib/supabase.js'
 
 const router = createRouter({
