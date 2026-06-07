@@ -4,6 +4,8 @@ import ImageUploader from '../components/ImageUploader.vue'
 import PromptForm from '../components/PromptForm.vue'
 import PromptRefiner from '../components/PromptRefiner.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
+import LoadingOverlay from '../components/LoadingOverlay.vue'
+import GenerationResult from '../components/GenerationResult.vue'
 import { supabase } from '../lib/supabase.js'
 import { createGeneration } from '../services/generation.service.js'
 import { isPromptFormComplete } from '../utils/inputValidation.js'
@@ -21,6 +23,11 @@ const isGenerating = ref(false)
 const generationId = ref('')
 const generatedImageUrl = ref('')
 const generationErrorMessage = ref('')
+const regenerateErrorMessage = ref('')
+const lastGenerationPayload = ref(null)
+
+const REGENERATE_FAILED_MESSAGE =
+  '다시 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.'
 
 const hasImage = computed(() => Boolean(uploadedImage.value))
 
@@ -33,10 +40,17 @@ const originalImageUrl = computed(() => {
   }
 
   const { bucket, path } = image
-  if (!bucket || !path) return ''
+  if (bucket && path) {
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+    const publicUrl = data.publicUrl?.trim()
+    if (publicUrl) return publicUrl
+  }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-  return data.publicUrl?.trim() || ''
+  if (image.previewUrl?.trim()) {
+    return image.previewUrl.trim()
+  }
+
+  return ''
 })
 
 const isFormComplete = computed(() =>
@@ -57,6 +71,8 @@ const isGenerateDisabled = computed(
 const generateButtonLabel = computed(() =>
   isGenerating.value ? '이미지 생성 중...' : '이미지 생성'
 )
+
+const canRegenerate = computed(() => Boolean(lastGenerationPayload.value))
 
 const imageHintMessage = computed(() => {
   if (hasImage.value) return ''
@@ -86,6 +102,25 @@ function onPromptInteraction() {
   promptTouched.value = true
 }
 
+function buildGenerationPayload() {
+  return {
+    originalImageUrl: originalImageUrl.value || undefined,
+    emotion: promptForm.value.emotion,
+    motion: promptForm.value.motion,
+    inputText: promptForm.value.text,
+    storyPrompt: storyPrompt.value,
+    finalPrompt: finalPrompt.value,
+  }
+}
+
+function applyGenerationSuccess(payload, result) {
+  generationId.value = result.id
+  generatedImageUrl.value = result.generatedImageUrl
+  storyPrompt.value = payload.storyPrompt
+  finalPrompt.value = payload.finalPrompt
+  lastGenerationPayload.value = { ...payload }
+}
+
 async function handleGenerateImage() {
   if (isGenerating.value) return
 
@@ -96,19 +131,13 @@ async function handleGenerateImage() {
 
   isGenerating.value = true
   generationErrorMessage.value = ''
+  regenerateErrorMessage.value = ''
+
+  const payload = buildGenerationPayload()
 
   try {
-    const result = await createGeneration({
-      originalImageUrl: originalImageUrl.value || undefined,
-      emotion: promptForm.value.emotion,
-      motion: promptForm.value.motion,
-      inputText: promptForm.value.text,
-      storyPrompt: storyPrompt.value,
-      finalPrompt: finalPrompt.value,
-    })
-
-    generationId.value = result.id
-    generatedImageUrl.value = result.generatedImageUrl
+    const result = await createGeneration(payload)
+    applyGenerationSuccess(payload, result)
   } catch (err) {
     generationErrorMessage.value =
       err instanceof Error
@@ -118,10 +147,28 @@ async function handleGenerateImage() {
     isGenerating.value = false
   }
 }
+
+async function handleRegenerate() {
+  if (isGenerating.value || !lastGenerationPayload.value) return
+
+  isGenerating.value = true
+  regenerateErrorMessage.value = ''
+
+  try {
+    const result = await createGeneration(lastGenerationPayload.value)
+    applyGenerationSuccess(lastGenerationPayload.value, result)
+  } catch {
+    regenerateErrorMessage.value = REGENERATE_FAILED_MESSAGE
+  } finally {
+    isGenerating.value = false
+  }
+}
 </script>
 
 <template>
   <section class="create-page">
+    <LoadingOverlay :visible="isGenerating" />
+
     <div class="create-page__card">
       <header class="create-page__header">
         <h1>이모티콘 생성</h1>
@@ -142,26 +189,31 @@ async function handleGenerateImage() {
           @update:form="onFormUpdate"
           @interaction="onPromptInteraction"
         />
-        <PromptRefiner
-          :emotion="promptForm.emotion"
-          :motion="promptForm.motion"
-          :input-text="promptForm.text"
-          :original-image-url="originalImageUrl"
-          @update:story-prompt="storyPrompt = $event"
-          @update:final-prompt="finalPrompt = $event"
-        />
+        <fieldset
+          class="create-page__refiner-fieldset"
+          :disabled="isGenerating"
+        >
+          <PromptRefiner
+            :emotion="promptForm.emotion"
+            :motion="promptForm.motion"
+            :input-text="promptForm.text"
+            :original-image-url="originalImageUrl"
+            @update:story-prompt="storyPrompt = $event"
+            @update:final-prompt="finalPrompt = $event"
+          />
+        </fieldset>
       </div>
 
-      <div v-if="generatedImageUrl" class="create-page__section">
-        <h2 class="create-page__section-title">3. 생성 결과</h2>
-        <div class="create-page__preview-wrap">
-          <img
-            :src="generatedImageUrl"
-            alt="생성된 이모티콘 미리보기"
-            class="create-page__preview"
-          />
-        </div>
-      </div>
+      <GenerationResult
+        :generated-image-url="generatedImageUrl"
+        :original-image-url="originalImageUrl"
+        :final-prompt="finalPrompt"
+        :generation-id="generationId"
+        :is-generating="isGenerating"
+        :can-regenerate="canRegenerate"
+        :regenerate-error-message="regenerateErrorMessage"
+        @regenerate="handleRegenerate"
+      />
 
       <div class="create-page__actions">
         <ErrorMessage :message="imageHintMessage" />
@@ -200,6 +252,12 @@ async function handleGenerateImage() {
   gap: 28px;
 }
 
+@media (min-width: 641px) {
+  .create-page__card {
+    max-width: 720px;
+  }
+}
+
 .create-page__header h1 {
   font-size: 36px;
   margin: 0 0 12px;
@@ -226,11 +284,30 @@ async function handleGenerateImage() {
   margin-inline: auto;
 }
 
+@media (min-width: 641px) {
+  .create-page__section > :not(.create-page__section-title) {
+    max-width: 720px;
+  }
+}
+
 .create-page__section-title {
   margin: 0;
   font-size: 18px;
   font-weight: 500;
   color: var(--text-h);
+}
+
+.create-page__refiner-fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+  width: 100%;
+}
+
+.create-page__refiner-fieldset:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .create-page__actions {
@@ -242,6 +319,12 @@ async function handleGenerateImage() {
   max-width: 480px;
   margin-inline: auto;
   padding-top: 4px;
+}
+
+@media (min-width: 641px) {
+  .create-page__actions {
+    max-width: 720px;
+  }
 }
 
 .create-page__next-btn {
@@ -278,21 +361,6 @@ async function handleGenerateImage() {
   background: var(--social-bg);
   border-color: var(--border);
   box-shadow: none;
-}
-
-.create-page__preview-wrap {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--code-bg);
-}
-
-.create-page__preview {
-  display: block;
-  width: 100%;
-  max-height: min(60vh, 360px);
-  object-fit: contain;
 }
 
 @media (max-width: 480px) {

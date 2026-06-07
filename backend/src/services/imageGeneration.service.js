@@ -1,6 +1,10 @@
+import { downloadReferenceImageByUrl } from './storage.service.js';
+
 const DEFAULT_IMAGE_GENERATION_MODEL = 'gpt-image-1';
 const DEFAULT_IMAGE_GENERATION_API_URL =
   'https://api.openai.com/v1/images/generations';
+const DEFAULT_IMAGE_GENERATION_EDITS_API_URL =
+  'https://api.openai.com/v1/images/edits';
 const DEFAULT_GENERATED_MIME_TYPE = 'image/png';
 const IMAGE_GENERATION_TIMEOUT_MS = 60_000;
 const PLACEHOLDER_API_KEYS = new Set([
@@ -36,6 +40,18 @@ function getImageGenerationApiUrl() {
   return (
     process.env.IMAGE_GENERATION_API_URL?.trim() ||
     DEFAULT_IMAGE_GENERATION_API_URL
+  );
+}
+
+function getImageGenerationEditsApiUrl() {
+  const configured = process.env.IMAGE_GENERATION_EDITS_API_URL?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  return (
+    getImageGenerationApiUrl().replace(/\/generations\/?$/, '/edits') ||
+    DEFAULT_IMAGE_GENERATION_EDITS_API_URL
   );
 }
 
@@ -119,6 +135,12 @@ async function parseOpenAiCompatibleImageResponse(data, signal) {
   throw createServiceError('Image generation API returned an empty response.');
 }
 
+function buildReferenceImageFilename(mimeType) {
+  if (mimeType === 'image/jpeg') return 'reference.jpg';
+  if (mimeType === 'image/webp') return 'reference.webp';
+  return 'reference.png';
+}
+
 async function requestOpenAiCompatibleImageGeneration({
   apiKey,
   model,
@@ -153,26 +175,72 @@ async function requestOpenAiCompatibleImageGeneration({
   return parseOpenAiCompatibleImageResponse(data, signal);
 }
 
+async function requestOpenAiCompatibleImageEdit({
+  apiKey,
+  model,
+  apiUrl,
+  finalPrompt,
+  referenceImageBuffer,
+  referenceMimeType,
+  signal,
+}) {
+  const prompt = finalPrompt.trim();
+  const formData = new FormData();
+  formData.append('model', model);
+  formData.append('prompt', prompt);
+  formData.append('size', '1024x1024');
+  formData.append('input_fidelity', 'high');
+  formData.append(
+    'image',
+    new Blob([referenceImageBuffer], { type: referenceMimeType }),
+    buildReferenceImageFilename(referenceMimeType)
+  );
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    logOpenAiErrorResponse(response.status, errorBody);
+    throw createServiceError('Image generation request failed.');
+  }
+
+  const data = await response.json();
+  return parseOpenAiCompatibleImageResponse(data, signal);
+}
+
 /**
  * 외부 이미지 생성 provider 호출.
- * 새 provider 추가 시 adapter 함수를 연결합니다.
+ * originalImageUrl이 있으면 edits(reference image) API를, 없으면 generations(text-only) API를 사용합니다.
  */
 async function callImageGenerationProvider(params) {
+  if (params.referenceImageBuffer) {
+    return requestOpenAiCompatibleImageEdit(params);
+  }
+
   return requestOpenAiCompatibleImageGeneration(params);
 }
 
 /**
- * finalPrompt로 외부 이미지 생성 API를 호출하고 Supabase Storage 업로드용 Buffer를 반환합니다.
+ * finalPrompt와 (선택) originalImageUrl로 외부 이미지 생성 API를 호출하고 Buffer를 반환합니다.
  * backend controller에서만 호출하세요.
  *
- * @param {string} finalPrompt
+ * @param {{ finalPrompt: string, originalImageUrl?: string }} params
  * @returns {Promise<{ imageBuffer: Buffer, mimeType: string }>}
  */
-export async function generateImageFromPrompt(finalPrompt) {
+export async function generateImageFromPrompt({ finalPrompt, originalImageUrl }) {
   const prompt = assertFinalPrompt(finalPrompt);
+  const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
   const apiKey = getImageGenerationApiKey();
   const model = getImageGenerationModel();
   const apiUrl = getImageGenerationApiUrl();
+  const editsApiUrl = getImageGenerationEditsApiUrl();
 
   const controller = new AbortController();
   const timeoutId = setTimeout(
@@ -181,18 +249,35 @@ export async function generateImageFromPrompt(finalPrompt) {
   );
 
   try {
+    let referenceImageBuffer;
+    let referenceMimeType;
+
+    if (trimmedOriginalImageUrl) {
+      const referenceImage = await downloadReferenceImageByUrl(
+        trimmedOriginalImageUrl,
+        controller.signal
+      );
+      referenceImageBuffer = referenceImage.imageBuffer;
+      referenceMimeType = referenceImage.mimeType;
+    }
+
     return await callImageGenerationProvider({
       apiKey,
       model,
-      apiUrl,
+      apiUrl: trimmedOriginalImageUrl ? editsApiUrl : apiUrl,
       finalPrompt: prompt,
+      referenceImageBuffer,
+      referenceMimeType,
       signal: controller.signal,
     });
   } catch (error) {
     if (error.name === 'AbortError') {
       throw createServiceError('Image generation request timed out.');
     }
-    if (error.isImageGenerationServiceError) {
+    if (
+      error.isImageGenerationServiceError ||
+      error.isStorageServiceError
+    ) {
       throw error;
     }
     console.error('Image generation service error:', error.message);

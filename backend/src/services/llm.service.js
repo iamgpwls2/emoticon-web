@@ -98,7 +98,7 @@ function includesAny(text, phrases) {
   return phrases.some((phrase) => lower.includes(phrase.toLowerCase()));
 }
 
-function applyCharacterPreservationGuards(
+export function applyCharacterPreservationGuards(
   { storyPrompt, finalPrompt },
   { hasReferenceImage, inputText }
 ) {

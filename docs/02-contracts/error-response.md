@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-06 (Day 6 — `POST /api/prompts/refine` 에러 응답 반영)
+- 2026-06-06 (Day 8 — 생성 결과 UI 오류 메시지 반영)
 
 ---
 
@@ -160,8 +161,109 @@ OpenAI 실패 시 로그 예: HTTP status + `error.type`만 — **응답 body에
 
 ---
 
+## Day 8 — 생성 결과 UI 오류 메시지
+
+Day 8 frontend-only 오류(이미지 로드·다운로드)와 `POST /api/generations` 실패 표시를 정리합니다.  
+**API 계약(body 형식·status code)은 Day 7과 동일**합니다.
+
+### 사용자 메시지 vs 개발자 로그
+
+| 구분 | 규칙 | 예 |
+|------|------|-----|
+| **사용자 UI** | 한글, 복구 방법 포함, 내부 원인·URL·stack 미노출 | `ErrorMessage`, `GenerationResult` action-error |
+| **브라우저 console** | MVP에서 **의도적 `console.log/error` 없음** — 네트워크 탭·Vue devtools로 디버그 | — |
+| **Backend log** | `console.error` / `console.info` — URL·prompt 전체·API key 미포함 | 아래 「서버 로그」 |
+
+---
+
+### 1. 이미지 생성 실패 (`POST /api/generations`)
+
+**발생:** API 4xx/5xx, 네트워크 오류, 세션 없음  
+**표시 위치:** `CreatePage.vue` → `ErrorMessage` (「이미지 생성」 버튼 위)
+
+| 원인 | 사용자 메시지 | 출처 |
+|------|---------------|------|
+| 세션 없음 (요청 전) | `You must be signed in to create an emoticon.` | `generation.service.js` throw |
+| `finalPrompt` 없음 (요청 전) | `finalPrompt는 필수값입니다.` | `CreatePage` / `generation.service.js` |
+| API 500 | `이모티콘 생성에 실패했습니다. 다시 시도해 주세요.` | response `body.message` |
+| API 400 등 | `입력값을 확인해 주세요.` 등 | `body.message` 또는 `body.error.message` |
+| JSON 파싱 실패 | `이모티콘 생성에 실패했습니다. 다시 시도해 주세요.` | `generation.service.js` fallback |
+| 기타 | `err.message` 또는 위 fallback | `handleGenerateImage` catch |
+
+**서버 로그 (클라이언트 미포함):**
+
+```txt
+createGeneration request { userId, hasReferenceImage, hasInputText }
+createGeneration failed (user=<userId>): <내부 message>
+createGeneration failed (user=<userId>, generation=<id>): <내부 message>
+```
+
+> `originalImageUrl` 전체, signed URL, storage path, prompt 전체는 **로그에 남기지 않음**
+
+---
+
+### 2. 이미지 로드 실패 (미리보기)
+
+**발생:** `<img @error>` — CORS, 만료 signed URL, 잘못된 URL 등  
+**표시 위치:** `GenerationResult.vue` 비교 영역 (인라인 텍스트)
+
+| 영역 | 사용자 메시지 | 접근성 |
+|------|---------------|--------|
+| 원본 | `원본 이미지를 불러오지 못했습니다.` | 일반 텍스트 |
+| 원본 URL 없음 | `원본 이미지가 없습니다.` | 빈 상태 |
+| 생성 | `생성 이미지를 불러오지 못했습니다.` | `role="alert"` |
+
+- 생성 이미지 로드 실패 시 **PNG 다운로드 버튼 disabled**
+- URL 변경 시 `@error` 플래그 자동 리셋 (`watch`)
+
+---
+
+### 3. 다운로드 실패
+
+**발생:** `downloadImage()` — fetch 실패 + anchor fallback도 불가  
+**표시 위치:** `GenerationResult.vue` — PNG 다운로드 버튼 아래
+
+| 사용자 메시지 |
+|---------------|
+| `이미지 다운로드에 실패했습니다. 이미지를 새 탭에서 열어 저장해 주세요.` |
+
+**개발자 참고 (UI 미표시):** `downloadImage.js` 내부 throw — `imageUrl is required`, `Image fetch failed with status N`, `Anchor download failed` 등. MVP는 catch 후 사용자 메시지만 표시.
+
+> fetch 실패 시 anchor fallback을 시도하므로, **fallback 성공 시 사용자에게 오류를 표시하지 않음**
+
+---
+
+### 4. 다시 생성 실패
+
+**발생:** 재생성 `POST /api/generations` 실패  
+**표시 위치:** `GenerationResult.vue` — 다시 생성하기 버튼 아래
+
+| 사용자 메시지 |
+|---------------|
+| `다시 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.` |
+
+- `CreatePage` `REGENERATE_FAILED_MESSAGE` — API `body.message`와 **무관하게** 통합 메시지
+- 실패해도 **이전 `generatedImageUrl`·결과 카드 유지**
+- 새 생성 시 `regenerateErrorMessage` 초기화
+
+**서버 로그:** §1과 동일 (`createGeneration failed ...`)
+
+---
+
+### Day 8 메시지 요약
+
+| 시나리오 | 사용자 메시지 | 컴포넌트 |
+|----------|---------------|----------|
+| 생성 API 실패 | API/fallback 한글 메시지 | `CreatePage` `ErrorMessage` |
+| 생성 이미지 로드 실패 | `생성 이미지를 불러오지 못했습니다.` | `GenerationResult` |
+| 원본 이미지 로드 실패 | `원본 이미지를 불러오지 못했습니다.` | `GenerationResult` |
+| 다운로드 실패 | `이미지 다운로드에 실패했습니다. ...` | `GenerationResult` |
+| 다시 생성 실패 | `다시 생성에 실패했습니다. ...` | `GenerationResult` |
+
+---
+
 ## 관련 문서
 
-- API 명세: `02-contracts/api-contract.md` (`POST /api/prompts/refine`)
-- PRD: `01-prd/04-llm-prompt-refine.md`
+- API 명세: `02-contracts/api-contract.md` (`POST /api/prompts/refine`, `POST /api/generations`)
+- PRD: `01-prd/04-llm-prompt-refine.md`, `01-prd/06-generation-result-download.md`
 - API Key: `04-security/api-key-policy.md`

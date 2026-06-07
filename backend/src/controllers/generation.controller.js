@@ -4,6 +4,7 @@ import {
   markGenerationFailed,
 } from '../services/generation.service.js';
 import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
+import { applyCharacterPreservationGuards } from '../services/llm.service.js';
 import { uploadGeneratedEmoticon } from '../services/storage.service.js';
 
 function toSafeErrorMessage(error) {
@@ -11,7 +12,7 @@ function toSafeErrorMessage(error) {
     return 'Image generation request failed.';
   }
   if (error.isStorageServiceError) {
-    return 'Failed to upload generated emoticon.';
+    return 'Storage operation failed.';
   }
   return 'Generation pipeline failed.';
 }
@@ -31,17 +32,39 @@ export async function createGeneration(req, res) {
     finalPrompt,
   } = req.body;
 
+  const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
+  const hasReferenceImage = Boolean(trimmedOriginalImageUrl);
+  const trimmedInputText =
+    typeof inputText === 'string' ? inputText.trim() : '';
+  const trimmedFinalPrompt = finalPrompt?.trim();
+  const { finalPrompt: imageGenerationPrompt } = applyCharacterPreservationGuards(
+    {
+      storyPrompt: typeof storyPrompt === 'string' ? storyPrompt.trim() : '',
+      finalPrompt: trimmedFinalPrompt,
+    },
+    {
+      hasReferenceImage,
+      inputText: trimmedInputText,
+    }
+  );
+
+  console.info('createGeneration request', {
+    userId,
+    hasReferenceImage,
+    hasInputText: Boolean(trimmedInputText),
+  });
+
   let record;
 
   try {
     record = await createGeneratingRecord({
       userId,
-      originalImageUrl,
+      originalImageUrl: trimmedOriginalImageUrl,
       emotion,
       motion,
       inputText,
       storyPrompt,
-      finalPrompt,
+      finalPrompt: imageGenerationPrompt,
     });
   } catch (error) {
     console.error(`createGeneration failed (user=${userId}):`, error.message);
@@ -51,7 +74,10 @@ export async function createGeneration(req, res) {
   }
 
   try {
-    const { imageBuffer, mimeType } = await generateImageFromPrompt(finalPrompt);
+    const { imageBuffer, mimeType } = await generateImageFromPrompt({
+      finalPrompt: imageGenerationPrompt,
+      originalImageUrl: trimmedOriginalImageUrl,
+    });
     const { generatedImageUrl } = await uploadGeneratedEmoticon(
       userId,
       record.id,

@@ -9,6 +9,7 @@
 
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 5 — 생성 페이지 입력 UI MVP 기준 반영)
+- 2026-06-06 (Day 8 — 로딩·결과·다운로드 UI 기준 반영)
 
 > 확정 디자인이 아닌 **MVP 기준**입니다. 이후 단계에서 시각 언어를 보강할 수 있습니다.
 
@@ -120,6 +121,91 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 
 ---
 
+## Day 8 — 로딩 · 생성 결과 · 다운로드 UI
+
+구현: `LoadingOverlay.vue`, `GenerationResult.vue`, `CreatePage.vue`, `downloadImage.js`
+
+### 1. LoadingOverlay 스타일 기준
+
+| 항목 | MVP 값 |
+|------|--------|
+| 배경 | `rgba(8, 6, 13, 0.35)` — dark: `rgba(0, 0, 0, 0.45)` |
+| z-index | `1000` |
+| 패널 | `--bg`, `--border`, `border-radius 12px`, `box-shadow: var(--shadow)` |
+| 스피너 | `36×36px`, accent top border, `0.8s` 회전 |
+| 메시지 | `15px`, `--text-h`, `word-break: keep-all` |
+| 전환 | fade `0.2s ease` |
+
+**모바일 (`max-width: 480px`):** 하단 정렬, 패널 row(스피너+메시지), 배경 opacity 축소
+
+### 2. GenerationResult 카드 스타일 기준
+
+| 항목 | MVP 값 |
+|------|--------|
+| 섹션 제목 | `18px` medium, `--text-h` (모바일 `16px`) |
+| 카드 배경 | `--code-bg` |
+| 카드 테두리 | `1px solid var(--border)`, `border-radius 12px` |
+| 카드 패딩 | `16px` (모바일 `12px`) |
+| 미리보기 wrap | `--bg` 배경, `border-radius 8px`, `overflow: hidden` |
+| 힌트 박스 | `--bg` 배경, `13px` (모바일 `12px`) |
+
+### 3. 이미지 비교 UI (desktop / mobile)
+
+| 뷰포트 | grid |
+|--------|------|
+| `min-width: 641px` | `grid-template-columns: 1fr 1fr`, gap `20px` |
+| 그 외 | `1fr` 단일 열, gap `16px` |
+
+- 라벨: `14px` medium — 「원본 이미지」「생성 이미지」
+- 이미지: `width 100%`, `object-fit: contain`, `max-height: min(50vh, 320px)`
+- 빈 상태: `--social-bg` 배경, `14px`, 가운데 정렬
+
+### 4. 버튼 disabled 상태 기준
+
+**공통 disabled 시각 (MVP):**
+
+- `opacity: 0.55`
+- `cursor: not-allowed`
+- 배경 `--social-bg`, 텍스트 `--text`, 테두리 `--border`
+- hover·shadow 없음
+
+| 버튼 | enabled 스타일 | disabled 조건 |
+|------|----------------|---------------|
+| **PNG 다운로드** | accent 배경 (`--accent-bg` / `--accent`) | URL 없음 · `isGenerating` · 다운로드 중 · 생성 이미지 로드 실패 |
+| **다시 생성하기** | outline (`--bg` + `--border`) | `isGenerating` · `canRegenerate` false |
+| **이미지 생성** (`CreatePage`) | accent (Day 5와 동일) | 폼 미완 · `finalPrompt` 없음 · `isGenerating` |
+
+- 터치 타겟: `min-height 44px`, 전체 너비 `100%`
+- 포커스: `outline 2px solid var(--accent)`, `outline-offset 2px`
+
+### 5. 오류 메시지 표시 기준
+
+| 위치 | 컴포넌트 | 스타일 |
+|------|----------|--------|
+| 생성 API 실패 | `CreatePage` → `ErrorMessage` | Day 5 `.error-message` |
+| 재생성·다운로드 실패 | `GenerationResult` → `.generation-result__action-error` | 동일 톤 (`#dc2626`, 연한 빨간 배경) |
+| 생성 이미지 로드 실패 | `.generation-result__image-error` | `role="alert"`, 비교 영역 인라인 |
+| 원본 로드 실패 | `.generation-result__empty-state` | 보조 텍스트 톤 (alert 아님) |
+
+- `ErrorMessage`: `role="alert"`, `14px` (모바일 `13px`)
+- 액션 오류는 해당 버튼 **바로 아래** 배치
+
+### 6. 다크 테마 UI 원칙
+
+전역: `frontend/src/style.css` — `color-scheme: light dark`, `prefers-color-scheme: dark` CSS 변수
+
+| 원칙 | 적용 |
+|------|------|
+| 하드코드 색 최소화 | 레이아웃·카드·버튼은 `--bg`, `--border`, `--text-h`, `--accent` 등 변수 사용 |
+| 오류 색 고정 | `#dc2626` + `rgba(220, 38, 38, 0.08)` — light/dark 공통 가독성 |
+| 오버레이 | dark에서 배경 opacity 상향 (`0.45` / mobile `0.3`) |
+| 대비 | 제목·라벨 `--text-h`, 본문·힌트 `--text` |
+| accent | dark: `--accent: #c084fc`, `--accent-bg` opacity 조정 |
+
+> 새 Day 8 컴포넌트는 `#fff` / `#000` 직접 지정 없이 기존 토큰을 재사용합니다.
+
+---
+
 ## 공통 컴포넌트 (현재)
 
 | 컴포넌트 | 용도 |
@@ -127,10 +213,12 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 | `ImageUploader` | 파일 선택·미리보기·업로드 |
 | `PromptForm` | 감정·모션·텍스트 입력 |
 | `ErrorMessage` | 인라인 오류 메시지 |
+| `LoadingOverlay` | 생성 중 전역 로딩 |
+| `GenerationResult` | 결과 미리보기·비교·다운로드·재생성 |
 
 ---
 
 ## 관련 문서
 
-- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`
+- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`, `01-prd/06-generation-result-download.md`
 - 전역 스타일: `frontend/src/style.css` (`--accent`, `--border` 등)

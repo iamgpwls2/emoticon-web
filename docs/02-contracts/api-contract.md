@@ -505,7 +505,7 @@ curl -X POST http://localhost:4000/api/generations \
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| `originalImageUrl` | string | 업로드된 원본 이미지 URL. 생략 가능 |
+| `originalImageUrl` | string | 업로드된 원본 이미지 URL. 전달 시 backend가 reference image로 다운로드 후 Images **edits** API에 전달. 생략 시 **generations**(text-to-image)만 사용 — **원본 캐릭터 보존은 보장되지 않음** |
 
 ---
 
@@ -607,7 +607,14 @@ curl -X POST http://localhost:4000/api/generations \
 
 Middleware chain: `requireAuth` → `validateCreateGeneration` → `createGenerationController`
 
-Backend 처리 순서: `generating` INSERT → 이미지 생성 → Storage 업로드 → `completed` | `failed` UPDATE
+Backend 처리 순서: `generating` INSERT → reference image 다운로드(있을 때) → Images edits/generations → Storage 업로드 → `completed` | `failed` UPDATE
+
+| `originalImageUrl` | Provider 호출 |
+|--------------------|---------------|
+| 있음 | `POST /v1/images/edits` + reference image (`input_fidelity=high`) |
+| 없음 | `POST /v1/images/generations` (text-to-image only, 원본 보존 미보장) |
+
+DB 저장: INSERT 시 `original_image_url`, 성공 UPDATE 시 `generated_image_url` (`02-contracts/db-schema.md`)
 
 Storage path: `02-contracts/storage-policy.md` — object key `{user_id}/{generation_id}.png`
 

@@ -45,20 +45,25 @@ export async function createGeneration({
     throw new Error('You must be signed in to create an emoticon.');
   }
 
+  const payload = {
+    emotion,
+    motion,
+    inputText,
+    storyPrompt,
+    finalPrompt,
+  };
+  const trimmedOriginalImageUrl = originalImageUrl?.trim();
+  if (trimmedOriginalImageUrl) {
+    payload.originalImageUrl = trimmedOriginalImageUrl;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/generations`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      originalImageUrl,
-      emotion,
-      motion,
-      inputText,
-      storyPrompt,
-      finalPrompt,
-    }),
+    body: JSON.stringify(payload),
   });
 
   let body;
