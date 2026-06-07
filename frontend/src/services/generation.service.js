@@ -1,10 +1,29 @@
 import { supabase } from '../lib/supabase.js';
+import { readApiResponse } from '../utils/apiError.js';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3000';
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+async function getAccessToken(unauthenticatedMessage) {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error(unauthenticatedMessage);
+  }
+
+  return accessToken;
 }
 
 /**
@@ -31,19 +50,9 @@ export async function createGeneration({
     throw new Error('finalPrompt는 필수값입니다.');
   }
 
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('You must be signed in to create an emoticon.');
-  }
+  const accessToken = await getAccessToken(
+    '이모티콘을 생성하려면 로그인이 필요합니다.'
+  );
 
   const payload = {
     emotion,
@@ -66,20 +75,10 @@ export async function createGeneration({
     body: JSON.stringify(payload),
   });
 
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error('이모티콘 생성에 실패했습니다. 다시 시도해 주세요.');
-  }
-
-  if (!response.ok) {
-    const message =
-      body?.error?.message ||
-      body?.message ||
-      '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.';
-    throw new Error(message);
-  }
+  const body = await readApiResponse(
+    response,
+    '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+  );
 
   return {
     id: body.id,
@@ -92,19 +91,7 @@ export async function createGeneration({
  * backend GET /api/generations/me 로 로그인 사용자의 생성 목록을 조회합니다.
  * @param {{ page?: number, limit?: number }} [params]
  * @returns {Promise<{
- *   items: Array<{
- *     id: string,
- *     status: string,
- *     originalImageUrl: string | null,
- *     generatedImageUrl: string | null,
- *     emotion: string | null,
- *     motion: string | null,
- *     inputText: string | null,
- *     storyPrompt: string | null,
- *     finalPrompt: string | null,
- *     createdAt: string,
- *     updatedAt: string,
- *   }>,
+ *   items: Array<object>,
  *   page: number,
  *   limit: number,
  *   total: number,
@@ -112,19 +99,9 @@ export async function createGeneration({
  * }>}
  */
 export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('You must be signed in to view your emoticons.');
-  }
+  const accessToken = await getAccessToken(
+    '이모티콘 목록을 보려면 로그인이 필요합니다.'
+  );
 
   const query = new URLSearchParams({
     page: String(page),
@@ -141,20 +118,10 @@ export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
     }
   );
 
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error('이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.');
-  }
-
-  if (!response.ok) {
-    const message =
-      body?.error?.message ||
-      body?.message ||
-      '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.';
-    throw new Error(message);
-  }
+  const body = await readApiResponse(
+    response,
+    '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.'
+  );
 
   return {
     items: body.items ?? [],
@@ -172,22 +139,12 @@ export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
  */
 export async function deleteGeneration(id) {
   if (!isNonEmptyString(id)) {
-    throw new Error('Generation id is required.');
+    throw new Error('삭제할 이모티콘 id가 필요합니다.');
   }
 
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('You must be signed in to delete an emoticon.');
-  }
+  const accessToken = await getAccessToken(
+    '이모티콘을 삭제하려면 로그인이 필요합니다.'
+  );
 
   const response = await fetch(`${API_BASE_URL}/api/generations/${id}`, {
     method: 'DELETE',
@@ -196,20 +153,10 @@ export async function deleteGeneration(id) {
     },
   });
 
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error('이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.');
-  }
-
-  if (!response.ok) {
-    const message =
-      body?.error?.message ||
-      body?.message ||
-      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.';
-    throw new Error(message);
-  }
+  const body = await readApiResponse(
+    response,
+    '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+  );
 
   return { success: body.success === true };
 }

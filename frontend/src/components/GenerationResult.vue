@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import ErrorMessage from './ErrorMessage.vue'
 import { downloadImage } from '../utils/downloadImage.js'
 
 const props = defineProps({
@@ -199,20 +200,8 @@ function handleRegenerateClick() {
         >
           {{ regenerateButtonLabel }}
         </button>
-        <p
-          v-if="downloadErrorMessage"
-          class="generation-result__action-error"
-          role="alert"
-        >
-          {{ downloadErrorMessage }}
-        </p>
-        <p
-          v-if="regenerateErrorMessage"
-          class="generation-result__action-error"
-          role="alert"
-        >
-          {{ regenerateErrorMessage }}
-        </p>
+        <ErrorMessage :message="downloadErrorMessage" variant="error" />
+        <ErrorMessage :message="regenerateErrorMessage" variant="error" />
       </div>
 
       <div v-if="hasFinalPrompt" class="generation-result__prompt">
@@ -402,18 +391,6 @@ function handleRegenerateClick() {
   background: var(--social-bg);
   border-color: var(--border);
   box-shadow: none;
-}
-
-.generation-result__action-error {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.45;
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  word-break: keep-all;
 }
 
 .generation-result__prompt {

@@ -1,5 +1,7 @@
 <script setup>
 import { onUnmounted, ref } from 'vue'
+import ErrorMessage from './ErrorMessage.vue'
+import { useAsyncState } from '../composables/useAsyncState.js'
 import { uploadImage } from '../services/uploadService.js'
 
 const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
@@ -11,9 +13,17 @@ const emit = defineEmits(['uploaded'])
 const fileInputRef = ref(null)
 const previewUrl = ref('')
 const selectedFile = ref(null)
-const uploading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
+
+const {
+  loading: uploading,
+  error: errorMessage,
+  successMessage,
+  clearError,
+  clearSuccess,
+  run: runUpload,
+} = useAsyncState({
+  fallbackError: '이미지 업로드에 실패했습니다. 다시 시도해 주세요.',
+})
 
 function getExtension(filename) {
   const dotIndex = filename.lastIndexOf('.')
@@ -49,8 +59,8 @@ function resetInput() {
 }
 
 function handleFileChange(event) {
-  errorMessage.value = ''
-  successMessage.value = ''
+  clearError()
+  clearSuccess()
 
   const file = event.target.files?.[0]
   if (!file) return
@@ -77,20 +87,10 @@ function openFilePicker() {
 async function handleUpload() {
   if (!selectedFile.value || uploading.value) return
 
-  uploading.value = true
-  errorMessage.value = ''
-  successMessage.value = ''
-
-  try {
-    const result = await uploadImage(selectedFile.value)
-    successMessage.value = '이미지 업로드가 완료되었습니다.'
-    emit('uploaded', result)
-  } catch (err) {
-    errorMessage.value =
-      err instanceof Error ? err.message : '업로드에 실패했습니다.'
-  } finally {
-    uploading.value = false
-  }
+  await runUpload(() => uploadImage(selectedFile.value), {
+    successMessage: '이미지 업로드가 완료되었습니다.',
+    onSuccess: (result) => emit('uploaded', result),
+  })
 }
 
 onUnmounted(() => {
@@ -141,21 +141,8 @@ onUnmounted(() => {
       />
     </div>
 
-    <p
-      v-if="errorMessage"
-      class="image-uploader__message image-uploader__message--error"
-      role="alert"
-    >
-      {{ errorMessage }}
-    </p>
-
-    <p
-      v-if="successMessage"
-      class="image-uploader__message image-uploader__message--success"
-      role="status"
-    >
-      {{ successMessage }}
-    </p>
+    <ErrorMessage :message="errorMessage" variant="error" />
+    <ErrorMessage :message="successMessage" variant="success" />
   </div>
 </template>
 
@@ -239,25 +226,6 @@ onUnmounted(() => {
   width: 100%;
   max-height: min(60vh, 360px);
   object-fit: contain;
-}
-
-.image-uploader__message {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-}
-
-.image-uploader__message--error {
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
-  border: 1px solid rgba(220, 38, 38, 0.2);
-}
-
-.image-uploader__message--success {
-  color: #15803d;
-  background: rgba(21, 128, 61, 0.08);
-  border: 1px solid rgba(21, 128, 61, 0.2);
 }
 
 @media (max-width: 480px) {

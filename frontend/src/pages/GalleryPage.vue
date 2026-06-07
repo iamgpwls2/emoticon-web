@@ -7,6 +7,7 @@ import {
   deleteGeneration,
   fetchMyGenerations,
 } from '../services/generation.service.js'
+import { toUserErrorMessage } from '../utils/apiError.js'
 
 const PAGE_LIMIT = 12
 
@@ -53,10 +54,10 @@ async function loadGenerations({ nextPage = 1, append = false } = {}) {
       total.value = 0
     }
 
-    errorMessage.value =
-      err instanceof Error
-        ? err.message
-        : '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.'
+    errorMessage.value = toUserErrorMessage(
+      err,
+      '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.'
+    )
   } finally {
     isLoading.value = false
     isLoadingMore.value = false
@@ -84,10 +85,10 @@ async function handleDelete(generationId) {
     total.value = Math.max(0, total.value - 1)
     deleteErrorMessage.value = ''
   } catch (err) {
-    deleteErrorMessage.value =
-      err instanceof Error
-        ? err.message
-        : '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+    deleteErrorMessage.value = toUserErrorMessage(
+      err,
+      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+    )
   } finally {
     deletingId.value = ''
   }
@@ -123,7 +124,7 @@ onMounted(() => {
       <GalleryGrid v-if="isInitialLoading()" :loading="true" />
 
       <div v-else-if="errorMessage" class="gallery-page__error">
-        <ErrorMessage :message="errorMessage" />
+        <ErrorMessage :message="errorMessage" variant="error" />
         <button
           type="button"
           class="gallery-page__retry-btn"
@@ -146,6 +147,7 @@ onMounted(() => {
         <ErrorMessage
           v-if="deleteErrorMessage"
           :message="deleteErrorMessage"
+          variant="error"
         />
 
         <GalleryGrid

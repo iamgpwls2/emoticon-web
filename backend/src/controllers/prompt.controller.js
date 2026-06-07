@@ -1,4 +1,5 @@
 import { refinePromptWithLLM } from '../services/llm.service.js';
+import { HttpError } from '../utils/httpError.js';
 
 /**
  * POST /api/prompts/refine
@@ -6,7 +7,7 @@ import { refinePromptWithLLM } from '../services/llm.service.js';
  */
 export async function refinePrompt(req, res) {
   const { emotion, motion, inputText, originalImageUrl } = req.body;
-  const userId = req.user?.id;
+  const userId = req.user.id;
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
 
   try {
@@ -22,13 +23,14 @@ export async function refinePrompt(req, res) {
       finalPrompt,
     });
   } catch (error) {
-    const logPrefix = userId
-      ? `refinePrompt failed (user=${userId})`
-      : 'refinePrompt failed';
-    console.error(`${logPrefix}:`, error.message);
+    console.error(`refinePrompt failed (user=${userId}):`, error.message);
 
-    return res.status(500).json({
-      message: '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.',
-    });
+    if (error.isLlmServiceError) {
+      throw HttpError.externalApi(
+        '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.'
+      );
+    }
+
+    throw error;
   }
 }

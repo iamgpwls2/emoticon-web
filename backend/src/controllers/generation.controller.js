@@ -8,6 +8,7 @@ import {
 import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
 import { applyCharacterPreservationGuards } from '../services/llm.service.js';
 import { uploadGeneratedEmoticon } from '../services/storage.service.js';
+import { HttpError } from '../utils/httpError.js';
 
 const DEFAULT_LIST_LIMIT = 12;
 const MAX_LIST_LIMIT = 50;
@@ -54,9 +55,9 @@ export async function getMyGenerations(req, res) {
     });
   } catch (error) {
     console.error(`getMyGenerations failed (user=${userId}):`, error.message);
-    return res.status(500).json({
-      message: '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.',
-    });
+    throw HttpError.serverError(
+      '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.'
+    );
   }
 }
 
@@ -111,9 +112,9 @@ export async function createGeneration(req, res) {
     });
   } catch (error) {
     console.error(`createGeneration failed (user=${userId}):`, error.message);
-    return res.status(500).json({
-      message: '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.',
-    });
+    throw HttpError.serverError(
+      '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+    );
   }
 
   try {
@@ -157,9 +158,19 @@ export async function createGeneration(req, res) {
       );
     }
 
-    return res.status(500).json({
-      message: '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.',
-    });
+    if (error.isImageGenerationServiceError) {
+      throw HttpError.externalApi(
+        '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+      );
+    }
+
+    if (error.isStorageServiceError) {
+      throw HttpError.storage('이모티콘 생성에 실패했습니다. 다시 시도해 주세요.');
+    }
+
+    throw HttpError.serverError(
+      '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+    );
   }
 }
 
@@ -175,18 +186,17 @@ export async function deleteGeneration(req, res) {
     await deleteMyGeneration({ generationId: id, userId });
     return res.status(200).json({ success: true });
   } catch (error) {
-    if (error.isGenerationNotFoundError) {
-      return res.status(404).json({
-        message: '이모티콘을 찾을 수 없습니다.',
-      });
-    }
-
     console.error(
       `deleteGeneration failed (user=${userId}, generation=${id}):`,
       error.message
     );
-    return res.status(500).json({
-      message: '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.',
-    });
+
+    if (error.isGenerationNotFoundError) {
+      throw HttpError.notFound('이모티콘을 찾을 수 없습니다.');
+    }
+
+    throw HttpError.serverError(
+      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+    );
   }
 }

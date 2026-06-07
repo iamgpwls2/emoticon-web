@@ -11,6 +11,7 @@
 - 2026-06-03 (Day 5 — 생성 페이지 입력 UI MVP 기준 반영)
 - 2026-06-06 (Day 8 — 로딩·결과·다운로드 UI 기준 반영)
 - 2026-06-07 (Day 9 — 갤러리 UI 기준 반영)
+- 2026-06-07 (Day 11 — ErrorMessage variant·async 상태·empty/loading 기준 반영)
 
 > 확정 디자인이 아닌 **MVP 기준**입니다. 이후 단계에서 시각 언어를 보강할 수 있습니다.
 
@@ -261,13 +262,93 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 
 ---
 
+## Day 11 — 오류 처리 · async 상태 · 입력 검증 UX
+
+구현: `ErrorMessage.vue`, `useAsyncState.js`, `apiError.js`, `ImageUploader.vue`, `PromptRefiner.vue`, `CreatePage.vue`, `GalleryPage.vue`, `GenerationResult.vue`
+
+### 1. ErrorMessage 사용 기준
+
+`ErrorMessage`는 `variant` prop으로 용도를 구분합니다.
+
+| `variant` | 용도 | `role` | 표시 위치 (예) |
+|-----------|------|--------|----------------|
+| `error` | API·검증·다운로드 실패 | `alert` | 버튼·필드 바로 아래 |
+| `success` | 업로드·구체화·생성 성공 | `status` | 액션 영역 하단 |
+| `hint` | 선행 조건 안내 (이미지 미업로드, finalPrompt 미확인) | `note` | 주요 버튼 위 |
+| `loading` | 구체화 등 인라인 진행 표시 | `status` (`aria-live="polite"`) | 버튼 아래 |
+
+- `message`가 비어 있으면 **렌더하지 않음**
+- API 실패: `body.message` 우선, 없으면 feature별 fallback (`readApiResponse` / `useAsyncState`)
+- 필드 검증: `PromptForm`은 필드별 `error`; Refiner·Uploader는 통합 `error`
+
+### 2. Loading 상태 표시 기준
+
+| 시나리오 | UI | 중복 클릭 방지 |
+|----------|-----|----------------|
+| **이미지 생성** | `LoadingOverlay` (전역, `pointer-events: all`) | 생성 버튼 disabled + handler early return |
+| **업로드** | 버튼 라벨 「업로드 중…」, input disabled | `useAsyncState.run` — `loading` 중 재호출 차단 |
+| **프롬프트 구체화** | 버튼 「구체화 중...」+ `ErrorMessage loading` | 버튼 disabled + `run` early return |
+| **갤러리 최초 로딩** | 문구 + `GalleryGrid` skeleton | — |
+| **갤러리 더 보기** | 버튼 「불러오는 중...」 | `:disabled="isLoadingMore"` |
+| **삭제** | 카드 버튼 「삭제 중...」 | `:disabled="deleting"`, 전역 `deletingId` 1건 |
+
+### 3. Success message 표시 기준
+
+| 시나리오 | 메시지 (예) | 비고 |
+|----------|-------------|------|
+| 업로드 성공 | `이미지 업로드가 완료되었습니다.` | 미리보기는 선택 직후 표시 |
+| 구체화 성공 | `프롬프트 구체화가 완료되었습니다.` | storyPrompt / finalPrompt 표시 |
+| 삭제 성공 | (MVP) 카드 제거만 | 별도 success 토스트 없음 |
+
+- success 표시 시 동일 영역의 `error`는 `run()` 시작 시 초기화
+
+### 4. Disabled button 기준 (Day 11 통합)
+
+**공통 시각:** `opacity: 0.55`, `cursor: not-allowed`, `--social-bg` / `--text` / `--border`, hover·shadow 없음
+
+| 버튼 | disabled 조건 |
+|------|----------------|
+| 업로드 | 파일 미선택 · 업로드 중 |
+| 이미지 선택 | 업로드 중 |
+| 프롬프트 구체화 | emotion/motion/inputText 누락 · 구체화 중 |
+| 이미지 생성 | 폼 미완 · finalPrompt 없음 · 생성 중 |
+| PNG 다운로드 | URL 없음 · 생성 중 · 다운로드 중 · 이미지 로드 실패 |
+| 다시 생성 | 생성 중 · `canRegenerate` false |
+| 갤러리 더 보기 | `isLoadingMore` |
+| 삭제 | 해당 카드 `deleting` |
+
+disabled 버튼 클릭으로 오류를 **새로 표시하지 않음** — hint/error는 별도 `ErrorMessage` 또는 필드 검증으로 안내.
+
+### 5. Empty state 기준
+
+| 화면 | 조건 | UI |
+|------|------|-----|
+| 갤러리 | 로딩·에러 아님, items 0건 | 「아직 생성한 이모티콘이 없습니다.」+ `/generate` 링크 |
+| GenerationResult 원본 | URL 없음 | 「원본 이미지가 없습니다.」 |
+| GenerationResult 생성 | `<img @error>` | 「생성 이미지를 불러오지 못했습니다.」 (`role="alert"`) |
+
+### 6. 모바일 — 오류·로딩 문구 표시
+
+브레이크포인트: **`max-width: 480px`**
+
+| 항목 | 기준 |
+|------|------|
+| `ErrorMessage` | `font-size: 13px`, padding 축소, `word-break: break-word`, `overflow-wrap: anywhere` |
+| `loading` variant | border/background 없음 — 본문과 겹치지 않게 버튼 아래 1줄 |
+| `LoadingOverlay` | 하단 정렬, row(스피너+메시지), 메시지 `14px` |
+| 긴 API message | 줄바꿈 허용, 가로 스크롤 없음 |
+| 터치 타겟 | 주요 버튼 `min-height: 44px` 유지 |
+
+---
+
 ## 공통 컴포넌트 (현재)
 
 | 컴포넌트 | 용도 |
 |----------|------|
-| `ImageUploader` | 파일 선택·미리보기·업로드 |
+| `ImageUploader` | 파일 선택·미리보기·업로드 (`useAsyncState`) |
 | `PromptForm` | 감정·모션·텍스트 입력 |
-| `ErrorMessage` | 인라인 오류 메시지 |
+| `PromptRefiner` | LLM 구체화 (`useAsyncState`) |
+| `ErrorMessage` | 인라인 상태 메시지 (`error` / `success` / `hint` / `loading`) |
 | `LoadingOverlay` | 생성 중 전역 로딩 |
 | `GenerationResult` | 결과 미리보기·비교·다운로드·재생성 |
 | `GalleryGrid` | 갤러리 카드 grid |
@@ -278,4 +359,6 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 ## 관련 문서
 
 - PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`, `01-prd/06-generation-result-download.md`, `01-prd/07-gallery-delete.md`
+- 에러 규격: `02-contracts/error-response.md`
+- 테스트: `05-roadmap/test-checklist.md`
 - 전역 스타일: `frontend/src/style.css` (`--accent`, `--border` 등)

@@ -3,267 +3,202 @@
 ## 목적
 
 - Backend API의 에러 응답 형식을 단일 규격으로 고정합니다.
-- Frontend는 이 규격을 기반으로 에러 UI(토스트/인라인/리다이렉트)를 구현합니다.
+- Frontend는 이 규격을 기반으로 `ErrorMessage`·fallback 메시지를 표시합니다.
 
 ## 작성 시점
 
 - 2026-06-02 (초안)
 - 2026-06-06 (Day 6 — `POST /api/prompts/refine` 에러 응답 반영)
 - 2026-06-06 (Day 8 — 생성 결과 UI 오류 메시지 반영)
+- 2026-06-07 (Day 11 — 공통 `{ message, code, details? }` 규격·error middleware 통합)
 
 ---
 
-## 공통 원칙
+## 공통 응답 형식
 
-| 항목 | 규칙 |
-|------|------|
-| 사용자 메시지 | 한글·이해 가능한 문구. 내부 원인을 그대로 노출하지 않음 |
-| 서버 로그 | `console.error` 등으로 **서버 측**에만 기록 |
-| Frontend 파싱 | `body.message` 또는 `body.error.message` 우선 (`prompt.service.js`) |
+모든 API 에러는 아래 JSON envelope을 사용합니다.
 
-### 클라이언트 응답에 포함하지 않는 항목
+```json
+{
+  "message": "사용자에게 보여줄 한글 메시지",
+  "code": "ERROR_CODE",
+  "details": {}
+}
+```
 
-아래 정보는 **절대** JSON 응답 body에 포함하지 않습니다.  
-서버 로그에도 API Key 값·전체 Authorization 헤더는 남기지 않습니다.
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `message` | `string` | ✅ | 사용자용 메시지 (한글, 복구 방법 포함) |
+| `code` | `string` | ✅ | 기계 판별용 코드 (`ErrorCode` enum) |
+| `details` | `object` | — | 필드별 검증 오류 등 부가 정보 (없으면 생략) |
 
-| 금지 항목 | 설명 |
-|-----------|------|
-| **API key** | `LLM_API_KEY`, OpenAI key, 기타 외부 API secret |
-| **외부 LLM 원본 에러** | OpenAI HTTP status, `error.type`, `error.message` 등 vendor raw payload |
-| **stack trace** | Node.js stack, 내부 exception name·경로 |
+구현: `backend/src/utils/httpError.js` (`HttpError`), `backend/src/middlewares/error.middleware.js` (`errorHandler`, `notFoundHandler`)
+
+### ErrorCode 목록
+
+| `code` | HTTP | 용도 |
+|--------|------|------|
+| `VALIDATION_ERROR` | 400 (또는 413) | body·파일 검증 실패 |
+| `UNAUTHORIZED` | 401 | 인증 실패 |
+| `FORBIDDEN` | 403 | 권한 없음 (MVP 예약) |
+| `NOT_FOUND` | 404 | 리소스·경로 없음 |
+| `STORAGE_ERROR` | 500 | Supabase Storage 실패 |
+| `EXTERNAL_API_ERROR` | 500 | LLM·이미지 생성 API 실패 |
+| `SERVER_ERROR` | 500 | 기타 서버 내부 오류 |
 
 ---
 
-## POST /api/prompts/refine — 에러 응답
+## 상태 코드별 예시
 
-엔드포인트: `POST /api/prompts/refine`  
-구현: `validatePromptRefine` → `refinePromptController` (`requireAuth` 선행)
+### 400 — Validation Error
 
----
-
-### 1. 400 입력값 검증 실패
-
-**발생 시점:** `validatePromptRefine` 미통과  
+**발생:** validator 미통과, 잘못된 multipart, 잘못된 URL 형식 등  
 **Status:** `400 Bad Request`
-
-#### Body 형식
 
 ```json
 {
   "message": "입력값을 확인해 주세요.",
-  "errors": [
-    {
-      "field": "emotion",
-      "message": "emotion은 필수값입니다."
-    }
-  ]
+  "code": "VALIDATION_ERROR",
+  "details": {
+    "errors": [
+      { "field": "emotion", "message": "emotion은 필수값입니다." },
+      { "field": "inputText", "message": "inputText는 최대 500자까지 입력할 수 있습니다." }
+    ]
+  }
 }
 ```
 
-#### `errors[]` 항목
+단일 필드 오류 예 (`POST /api/uploads/image` — 파일 없음):
 
-| `field` | `message` (예시) | 조건 |
-|---------|------------------|------|
-| `emotion` | `emotion은 필수값입니다.` | trim 후 비어 있음 |
-| `motion` | `motion은 필수값입니다.` | trim 후 비어 있음 |
-| `inputText` | `inputText는 필수값입니다.` | trim 후 비어 있음 |
-| `inputText` | `inputText는 최대 500자까지 입력할 수 있습니다.` | 500자 초과 |
-| `originalImageUrl` | `originalImageUrl은 문자열이어야 합니다.` | 전달됐으나 `string` 아님 |
+```json
+{
+  "message": "업로드할 이미지 파일을 선택해 주세요.",
+  "code": "VALIDATION_ERROR"
+}
+```
 
-#### Frontend 표시
-
-- MVP: 필드별 `errors[]` 분기 없이 **`message` 또는 fallback**으로 통합 표시 가능
-- `PromptRefiner.vue`: 「프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.」(400 전용 문구 미분기)
+> **413 (파일 크기):** 5MB 초과 업로드는 `400`이 아닌 **`413 Payload Too Large`** 이며, `code`는 `VALIDATION_ERROR`입니다.  
+> `message`: `이미지는 최대 5MB까지 업로드할 수 있습니다.`
 
 ---
 
-### 2. 401 인증 실패
+### 401 — Auth Error
 
-**발생 시점:** `requireAuth` 미통과 (Authorization header 없음·형식 오류·토큰 무효)  
+**발생:** `requireAuth` 미통과 (Authorization 없음·형식 오류·토큰 무효)  
 **Status:** `401 Unauthorized`
 
-#### Body 형식
-
-`requireAuth` 공통 envelope:
-
 ```json
 {
-  "ok": false,
-  "error": {
-    "message": "Authorization header is required."
-  }
+  "message": "로그인이 필요합니다.",
+  "code": "UNAUTHORIZED"
 }
 ```
 
 ```json
 {
-  "ok": false,
-  "error": {
-    "message": "Authorization must be Bearer {access_token}."
-  }
+  "message": "Invalid or expired access token.",
+  "code": "UNAUTHORIZED"
 }
 ```
-
-```json
-{
-  "ok": false,
-  "error": {
-    "message": "Invalid or expired access token."
-  }
-}
-```
-
-#### Frontend 표시
-
-- `prompt.service.js`: 세션 없음 → 요청 전 throw
-- API 401: `body.error.message` 파싱 후 throw → `PromptRefiner`에서 catch 시 통합 실패 메시지
 
 ---
 
-### 3. 500 LLM 호출 실패
+### 403 — Forbidden Error
 
-**발생 시점:** `refinePromptWithLLM` 예외 — OpenAI HTTP 오류, 빈 응답, JSON 파싱 실패, 타임아웃(30s), `LLM_API_KEY` 미설정, 기타 네트워크 오류  
+**발생:** 인증은 됐으나 리소스 접근 권한 없음 (MVP에서 `HttpError.forbidden()` 예약, 엔드포인트별 적용은 이후 확장)  
+**Status:** `403 Forbidden`
+
+```json
+{
+  "message": "접근 권한이 없습니다.",
+  "code": "FORBIDDEN"
+}
+```
+
+---
+
+### 404 — Not Found Error
+
+**발생:** 등록되지 않은 API 경로, 존재하지 않는 generation 삭제/조회 등  
+**Status:** `404 Not Found`
+
+```json
+{
+  "message": "요청한 API를 찾을 수 없습니다.",
+  "code": "NOT_FOUND"
+}
+```
+
+```json
+{
+  "message": "이모티콘을 찾을 수 없습니다.",
+  "code": "NOT_FOUND"
+}
+```
+
+> 타 사용자 generation ID 삭제 시에도 동일 메시지(열거 방지).
+
+---
+
+### 500 — Server Error
+
+**발생:** LLM·이미지 생성 API 실패, Storage 실패, 처리되지 않은 예외  
 **Status:** `500 Internal Server Error`
 
-#### Body 형식
-
-클라이언트에는 **단일 사용자 메시지**만 반환합니다.
-
 ```json
 {
-  "message": "프롬프트 구체화에 실패했습니다. 다시 시도해 주세요."
+  "message": "프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.",
+  "code": "EXTERNAL_API_ERROR"
 }
 ```
 
-#### 서버 로그 (클라이언트 미포함)
-
-```txt
-refinePrompt failed (user=<userId>): <내부 error.message>
+```json
+{
+  "message": "서버 처리 중 오류가 발생했습니다. 다시 시도해 주세요.",
+  "code": "SERVER_ERROR"
+}
 ```
 
-OpenAI 실패 시 로그 예: HTTP status + `error.type`만 — **응답 body에는 전달하지 않음**
-
-#### Frontend 표시
-
-- `PromptRefiner.vue`: `ErrorMessage` — 「프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.」
-- 기존 `storyPrompt` / `finalPrompt`는 **덮어쓰지 않음**
-- `loading` 해제 후 버튼 재클릭으로 재시도
+알 수 없는 예외는 `normalizeError()`가 `SERVER_ERROR`로 변환합니다.
 
 ---
 
-## 상태 코드 요약 (`POST /api/prompts/refine`)
+## 클라이언트 노출 금지 정책
 
-| 코드 | 원인 | 응답 키 |
-|------|------|---------|
-| 400 | body 검증 실패 | `message`, `errors[]` |
-| 401 | 인증 실패 | `ok`, `error.message` |
-| 500 | LLM·서버 내부 오류 | `message` |
+아래 정보는 **절대** JSON 응답 body에 포함하지 않습니다.
 
----
+| 금지 항목 | 설명 |
+|-----------|------|
+| **서버 내부 에러 원문** | Node stack, exception name, DB/Storage raw message, OpenAI vendor payload |
+| **API key / secret** | `LLM_API_KEY`, service role key, `sk-...`, `sb_...` 등 |
+| **토큰** | Authorization header 전체, access token, refresh token |
+| **stack trace** | 개발·운영 환경 모두 응답 body 미포함 |
 
-## Day 8 — 생성 결과 UI 오류 메시지
+**서버 로그:** `errorHandler`에서 `console.error` — `sanitizeLogMessage()`로 key·token 패턴 마스킹.  
+개발 환경(`NODE_ENV !== 'production'`)에서만 stack을 **로그**에 출력(응답에는 미포함).
 
-Day 8 frontend-only 오류(이미지 로드·다운로드)와 `POST /api/generations` 실패 표시를 정리합니다.  
-**API 계약(body 형식·status code)은 Day 7과 동일**합니다.
-
-### 사용자 메시지 vs 개발자 로그
-
-| 구분 | 규칙 | 예 |
-|------|------|-----|
-| **사용자 UI** | 한글, 복구 방법 포함, 내부 원인·URL·stack 미노출 | `ErrorMessage`, `GenerationResult` action-error |
-| **브라우저 console** | MVP에서 **의도적 `console.log/error` 없음** — 네트워크 탭·Vue devtools로 디버그 | — |
-| **Backend log** | `console.error` / `console.info` — URL·prompt 전체·API key 미포함 | 아래 「서버 로그」 |
+**Frontend:** `readApiResponse()` → `parseApiErrorBody()`로 `body.message` 우선 파싱.  
+legacy `{ ok: false, error: { message } }` 형식도 fallback으로 지원하나, Day 11 이후 신규 응답은 `{ message, code }`만 사용합니다.
 
 ---
 
-### 1. 이미지 생성 실패 (`POST /api/generations`)
+## Frontend 표시 요약
 
-**발생:** API 4xx/5xx, 네트워크 오류, 세션 없음  
-**표시 위치:** `CreatePage.vue` → `ErrorMessage` (「이미지 생성」 버튼 위)
+| 영역 | 실패 시 | fallback (API message 없을 때) |
+|------|---------|----------------------------------|
+| 업로드 | `ImageUploader` `ErrorMessage` | `이미지 업로드에 실패했습니다. 다시 시도해 주세요.` |
+| 프롬프트 구체화 | `PromptRefiner` `ErrorMessage` | `프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.` |
+| 이미지 생성 | `CreatePage` `ErrorMessage` | `이모티콘 생성에 실패했습니다. 다시 시도해 주세요.` |
+| 갤러리 조회 | `GalleryPage` `ErrorMessage` + 다시 시도 | `이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.` |
+| 삭제 | `GalleryPage` `ErrorMessage` | `이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.` |
 
-| 원인 | 사용자 메시지 | 출처 |
-|------|---------------|------|
-| 세션 없음 (요청 전) | `You must be signed in to create an emoticon.` | `generation.service.js` throw |
-| `finalPrompt` 없음 (요청 전) | `finalPrompt는 필수값입니다.` | `CreatePage` / `generation.service.js` |
-| API 500 | `이모티콘 생성에 실패했습니다. 다시 시도해 주세요.` | response `body.message` |
-| API 400 등 | `입력값을 확인해 주세요.` 등 | `body.message` 또는 `body.error.message` |
-| JSON 파싱 실패 | `이모티콘 생성에 실패했습니다. 다시 시도해 주세요.` | `generation.service.js` fallback |
-| 기타 | `err.message` 또는 위 fallback | `handleGenerateImage` catch |
-
-**서버 로그 (클라이언트 미포함):**
-
-```txt
-createGeneration request { userId, hasReferenceImage, hasInputText }
-createGeneration failed (user=<userId>): <내부 message>
-createGeneration failed (user=<userId>, generation=<id>): <내부 message>
-```
-
-> `originalImageUrl` 전체, signed URL, storage path, prompt 전체는 **로그에 남기지 않음**
-
----
-
-### 2. 이미지 로드 실패 (미리보기)
-
-**발생:** `<img @error>` — CORS, 만료 signed URL, 잘못된 URL 등  
-**표시 위치:** `GenerationResult.vue` 비교 영역 (인라인 텍스트)
-
-| 영역 | 사용자 메시지 | 접근성 |
-|------|---------------|--------|
-| 원본 | `원본 이미지를 불러오지 못했습니다.` | 일반 텍스트 |
-| 원본 URL 없음 | `원본 이미지가 없습니다.` | 빈 상태 |
-| 생성 | `생성 이미지를 불러오지 못했습니다.` | `role="alert"` |
-
-- 생성 이미지 로드 실패 시 **PNG 다운로드 버튼 disabled**
-- URL 변경 시 `@error` 플래그 자동 리셋 (`watch`)
-
----
-
-### 3. 다운로드 실패
-
-**발생:** `downloadImage()` — fetch 실패 + anchor fallback도 불가  
-**표시 위치:** `GenerationResult.vue` — PNG 다운로드 버튼 아래
-
-| 사용자 메시지 |
-|---------------|
-| `이미지 다운로드에 실패했습니다. 이미지를 새 탭에서 열어 저장해 주세요.` |
-
-**개발자 참고 (UI 미표시):** `downloadImage.js` 내부 throw — `imageUrl is required`, `Image fetch failed with status N`, `Anchor download failed` 등. MVP는 catch 후 사용자 메시지만 표시.
-
-> fetch 실패 시 anchor fallback을 시도하므로, **fallback 성공 시 사용자에게 오류를 표시하지 않음**
-
----
-
-### 4. 다시 생성 실패
-
-**발생:** 재생성 `POST /api/generations` 실패  
-**표시 위치:** `GenerationResult.vue` — 다시 생성하기 버튼 아래
-
-| 사용자 메시지 |
-|---------------|
-| `다시 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.` |
-
-- `CreatePage` `REGENERATE_FAILED_MESSAGE` — API `body.message`와 **무관하게** 통합 메시지
-- 실패해도 **이전 `generatedImageUrl`·결과 카드 유지**
-- 새 생성 시 `regenerateErrorMessage` 초기화
-
-**서버 로그:** §1과 동일 (`createGeneration failed ...`)
-
----
-
-### Day 8 메시지 요약
-
-| 시나리오 | 사용자 메시지 | 컴포넌트 |
-|----------|---------------|----------|
-| 생성 API 실패 | API/fallback 한글 메시지 | `CreatePage` `ErrorMessage` |
-| 생성 이미지 로드 실패 | `생성 이미지를 불러오지 못했습니다.` | `GenerationResult` |
-| 원본 이미지 로드 실패 | `원본 이미지를 불러오지 못했습니다.` | `GenerationResult` |
-| 다운로드 실패 | `이미지 다운로드에 실패했습니다. ...` | `GenerationResult` |
-| 다시 생성 실패 | `다시 생성에 실패했습니다. ...` | `GenerationResult` |
+클라이언트 선행 검증(파일 형식·크기, 필수 입력)은 API 호출 전 `ErrorMessage`로 표시합니다.
 
 ---
 
 ## 관련 문서
 
-- API 명세: `02-contracts/api-contract.md` (`POST /api/prompts/refine`, `POST /api/generations`)
-- PRD: `01-prd/04-llm-prompt-refine.md`, `01-prd/06-generation-result-download.md`
+- API 명세: `02-contracts/api-contract.md`
 - API Key: `04-security/api-key-policy.md`
+- UX 기준: `03-design/design-guide.md` (Day 11)
+- 테스트: `05-roadmap/test-checklist.md` (Day 11)

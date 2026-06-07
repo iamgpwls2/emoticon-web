@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { refinePrompt as refinePromptController } from '../controllers/prompt.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
 import { validatePromptRefine } from '../validators/prompt.validator.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
@@ -11,9 +12,9 @@ const router = Router();
  */
 router.post(
   '/refine',
-  requireAuth,
+  asyncHandler(requireAuth),
   validatePromptRefine,
-  refinePromptController
+  asyncHandler(refinePromptController)
 );
 
 export default router;

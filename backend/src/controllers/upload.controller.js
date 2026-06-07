@@ -1,15 +1,9 @@
 import crypto from 'crypto';
 import { fileTypeFromBuffer } from 'file-type';
 import { supabaseAdmin } from '../config/supabase.js';
+import { HttpError } from '../utils/httpError.js';
 
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
-
-function sendError(res, status, message) {
-  return res.status(status).json({
-    ok: false,
-    error: { message },
-  });
-}
 
 /**
  * POST /api/uploads/image
@@ -17,7 +11,7 @@ function sendError(res, status, message) {
  */
 export async function uploadImage(req, res) {
   if (!req.file) {
-    return sendError(res, 400, 'Image file is required.');
+    throw HttpError.validation('업로드할 이미지 파일을 선택해 주세요.');
   }
 
   const { buffer, size } = req.file;
@@ -26,14 +20,12 @@ export async function uploadImage(req, res) {
   try {
     detected = await fileTypeFromBuffer(buffer);
   } catch {
-    return sendError(res, 400, 'Unable to validate image file.');
+    throw HttpError.validation('실제 이미지 형식이 올바르지 않습니다. PNG, JPG, WEBP 파일만 업로드할 수 있습니다.');
   }
 
   if (!detected || !ALLOWED_MIME_TYPES.has(detected.mime)) {
-    return sendError(
-      res,
-      400,
-      'Only PNG, JPG, JPEG, and WEBP images are allowed.'
+    throw HttpError.validation(
+      '실제 이미지 형식이 올바르지 않습니다. PNG, JPG, WEBP 파일만 업로드할 수 있습니다.'
     );
   }
 
@@ -53,7 +45,7 @@ export async function uploadImage(req, res) {
 
   if (error) {
     console.error('Supabase Storage upload failed:', error.message);
-    return sendError(res, 500, 'Failed to upload image. Please try again.');
+    throw HttpError.storage('이미지 저장 중 오류가 발생했습니다.');
   }
 
   return res.status(201).json({

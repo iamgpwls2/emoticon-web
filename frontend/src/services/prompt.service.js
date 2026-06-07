@@ -1,14 +1,13 @@
 import { supabase } from '../lib/supabase.js';
+import { readApiResponse } from '../utils/apiError.js';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3000';
 
-/**
- * 사용자 입력을 backend POST /api/prompts/refine 으로 보내 storyPrompt / finalPrompt를 받습니다.
- * @param {{ emotion: string, motion: string, inputText: string, originalImageUrl?: string }} payload
- * @returns {Promise<{ storyPrompt: string, finalPrompt: string }>}
- */
-export async function refinePrompt({ emotion, motion, inputText, originalImageUrl }) {
+const REFINE_FAILED_MESSAGE =
+  '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.';
+
+async function getAccessToken() {
   const {
     data: { session },
     error: sessionError,
@@ -20,8 +19,24 @@ export async function refinePrompt({ emotion, motion, inputText, originalImageUr
 
   const accessToken = session?.access_token;
   if (!accessToken) {
-    throw new Error('You must be signed in to refine a prompt.');
+    throw new Error('프롬프트를 구체화하려면 로그인이 필요합니다.');
   }
+
+  return accessToken;
+}
+
+/**
+ * 사용자 입력을 backend POST /api/prompts/refine 으로 보내 storyPrompt / finalPrompt를 받습니다.
+ * @param {{ emotion: string, motion: string, inputText: string, originalImageUrl?: string }} payload
+ * @returns {Promise<{ storyPrompt: string, finalPrompt: string }>}
+ */
+export async function refinePrompt({
+  emotion,
+  motion,
+  inputText,
+  originalImageUrl,
+}) {
+  const accessToken = await getAccessToken();
 
   const payload = {
     emotion,
@@ -42,20 +57,7 @@ export async function refinePrompt({ emotion, motion, inputText, originalImageUr
     body: JSON.stringify(payload),
   });
 
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error('프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.');
-  }
-
-  if (!response.ok) {
-    const message =
-      body?.error?.message ||
-      body?.message ||
-      '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.';
-    throw new Error(message);
-  }
+  const body = await readApiResponse(response, REFINE_FAILED_MESSAGE);
 
   return {
     storyPrompt: body.storyPrompt,

@@ -1,18 +1,13 @@
-const INPUT_TEXT_MAX_LENGTH = 500;
-
-function isNonEmptyString(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function sendValidationError(res, errors) {
-  return res.status(400).json({
-    message: '입력값을 확인해 주세요.',
-    errors,
-  });
-}
+import { HttpError } from '../utils/httpError.js';
+import {
+  INPUT_TEXT_MAX_LENGTH,
+  isNonEmptyString,
+  pushOptionalStringField,
+  trimOptionalOriginalImageUrl,
+} from './shared.validation.js';
 
 /**
- * POST /api/prompts/refine 등 LLM 프롬프트 정제 요청 body 검증.
+ * POST /api/prompts/refine 요청 body 검증.
  * emotion, motion, inputText 필수 · originalImageUrl 선택.
  */
 export function validatePromptRefine(req, res, next) {
@@ -45,29 +40,14 @@ export function validatePromptRefine(req, res, next) {
     });
   }
 
-  if (
-    originalImageUrl !== undefined &&
-    originalImageUrl !== null &&
-    typeof originalImageUrl !== 'string'
-  ) {
-    errors.push({
-      field: 'originalImageUrl',
-      message: 'originalImageUrl은 문자열이어야 합니다.',
-    });
-  }
+  pushOptionalStringField(errors, 'originalImageUrl', originalImageUrl);
 
   if (errors.length > 0) {
-    return sendValidationError(res, errors);
+    return next(
+      HttpError.validation('입력값을 확인해 주세요.', { errors })
+    );
   }
 
-  if (typeof originalImageUrl === 'string') {
-    const trimmedOriginalImageUrl = originalImageUrl.trim();
-    if (trimmedOriginalImageUrl) {
-      req.body.originalImageUrl = trimmedOriginalImageUrl;
-    } else {
-      delete req.body.originalImageUrl;
-    }
-  }
-
+  trimOptionalOriginalImageUrl(req);
   next();
 }

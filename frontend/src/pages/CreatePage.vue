@@ -9,6 +9,7 @@ import GenerationResult from '../components/GenerationResult.vue'
 import { supabase } from '../lib/supabase.js'
 import { createGeneration } from '../services/generation.service.js'
 import { isPromptFormComplete } from '../utils/inputValidation.js'
+import { toUserErrorMessage } from '../utils/apiError.js'
 
 const uploadedImage = ref(null)
 const promptForm = ref({
@@ -139,10 +140,10 @@ async function handleGenerateImage() {
     const result = await createGeneration(payload)
     applyGenerationSuccess(payload, result)
   } catch (err) {
-    generationErrorMessage.value =
-      err instanceof Error
-        ? err.message
-        : '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+    generationErrorMessage.value = toUserErrorMessage(
+      err,
+      '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+    )
   } finally {
     isGenerating.value = false
   }
@@ -157,8 +158,11 @@ async function handleRegenerate() {
   try {
     const result = await createGeneration(lastGenerationPayload.value)
     applyGenerationSuccess(lastGenerationPayload.value, result)
-  } catch {
-    regenerateErrorMessage.value = REGENERATE_FAILED_MESSAGE
+  } catch (err) {
+    regenerateErrorMessage.value = toUserErrorMessage(
+      err,
+      REGENERATE_FAILED_MESSAGE
+    )
   } finally {
     isGenerating.value = false
   }
@@ -216,9 +220,9 @@ async function handleRegenerate() {
       />
 
       <div class="create-page__actions">
-        <ErrorMessage :message="imageHintMessage" />
-        <ErrorMessage :message="finalPromptHintMessage" />
-        <ErrorMessage :message="generationErrorMessage" />
+        <ErrorMessage :message="imageHintMessage" variant="hint" />
+        <ErrorMessage :message="finalPromptHintMessage" variant="hint" />
+        <ErrorMessage :message="generationErrorMessage" variant="error" />
         <button
           type="button"
           class="create-page__next-btn"

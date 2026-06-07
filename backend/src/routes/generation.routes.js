@@ -5,7 +5,11 @@ import {
   getMyGenerations as getMyGenerationsController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
-import { validateCreateGeneration } from '../validators/generation.validator.js';
+import {
+  validateCreateGeneration,
+  validateGenerationIdParam,
+} from '../validators/generation.validator.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
@@ -13,7 +17,11 @@ const router = Router();
  * GET /api/generations/me
  * 동적 라우트(/:id 등)보다 먼저 등록합니다.
  */
-router.get('/me', requireAuth, getMyGenerationsController);
+router.get(
+  '/me',
+  asyncHandler(requireAuth),
+  asyncHandler(getMyGenerationsController)
+);
 
 /**
  * POST /api/generations
@@ -21,15 +29,20 @@ router.get('/me', requireAuth, getMyGenerationsController);
  */
 router.post(
   '/',
-  requireAuth,
+  asyncHandler(requireAuth),
   validateCreateGeneration,
-  createGenerationController
+  asyncHandler(createGenerationController)
 );
 
 /**
  * DELETE /api/generations/:id
  * /me 보다 뒤에 등록해 "me"가 id로 해석되지 않게 합니다.
  */
-router.delete('/:id', requireAuth, deleteGenerationController);
+router.delete(
+  '/:id',
+  asyncHandler(requireAuth),
+  validateGenerationIdParam,
+  asyncHandler(deleteGenerationController)
+);
 
 export default router;
