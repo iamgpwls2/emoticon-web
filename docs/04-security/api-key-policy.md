@@ -11,6 +11,7 @@
 - 2026-06-03 (Day 3 — Supabase·Backend 인증·외부 API 규칙 반영)
 - 2026-06-06 (OpenAI API key 관리 정책 상세화)
 - 2026-06-06 (Day 7 — `IMAGE_GENERATION_API_KEY` · 생성 Storage 정책 반영)
+- 2026-06-07 (Day 12 — frontend 허용 env·VITE_ 노출 원칙·점검 명령어 정리)
 
 ## 스택 전제
 
@@ -20,7 +21,33 @@
 
 ---
 
-## Supabase anon key
+## Day 12 — 키 분리 원칙 (요약)
+
+| 구분 | backend only | frontend 허용 (`VITE_*`) |
+|------|--------------|---------------------------|
+| Supabase service role | `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY` | ❌ |
+| OpenAI / LLM | `LLM_API_KEY` | ❌ |
+| Image provider | `IMAGE_GENERATION_API_KEY` | ❌ |
+| Supabase URL | `SUPABASE_URL` | `VITE_SUPABASE_URL` |
+| Supabase anon/publishable | `SUPABASE_ANON_KEY`, `SUPABASE_PUBLISHABLE_KEY` | `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_PUBLISHABLE_KEY` |
+| API base | — | `VITE_API_BASE_URL` |
+
+### VITE_ 접두사 주의
+
+- Vite는 `VITE_`로 시작하는 변수를 **브라우저 번들에 포함**합니다.
+- 따라서 **secret·service role·LLM key·image provider key는 `VITE_` 금지**.
+- frontend 코드·`frontend/.env`·docker frontend service에 server secret **전달 금지**.
+
+### .env.example · Docker
+
+| 파일 | 규칙 |
+|------|------|
+| `backend/.env.example` | placeholder만 (`your-*-key`) — **실제 key 금지** |
+| `frontend/.env.example` | `VITE_*` 공개 변수만 |
+| `docker-compose.yml` frontend | `VITE_API_BASE_URL` + `env_file: frontend/.env` — **secret 하드코딩 금지** |
+| `docker-compose.yml` backend | `env_file: backend/.env` — service role·LLM·image key |
+
+---
 
 `SUPABASE_ANON_KEY`는 Supabase 클라이언트 접근에 사용할 수 있는 **공개 키**입니다.
 
@@ -286,6 +313,17 @@ docker compose up -d --force-recreate backend
 - compose YAML·Dockerfile·README에 **실제 secret 문자열 기록 금지**
 - 빌드 args로 secret 전달 금지 (이미지 레이어 유출 위험)
 
+### frontend service (Day 12 점검)
+
+`docker-compose.yml` frontend에는 **공개 변수만** 전달합니다.
+
+| 허용 | 금지 |
+|------|------|
+| `VITE_API_BASE_URL` | `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY` |
+| `frontend/.env`의 `VITE_SUPABASE_*` | `LLM_API_KEY`, `IMAGE_GENERATION_API_KEY` |
+
+backend secret은 `backend/.env` + `env_file: ./backend/.env` 로만 주입합니다.
+
 ---
 
 ## 점검 체크리스트
@@ -293,12 +331,25 @@ docker compose up -d --force-recreate backend
 **PR 전:**
 
 ```bash
+# frontend에 server secret 패턴 없는지 (.env 제외)
+rg -i "SUPABASE_SERVICE_ROLE|SERVICE_ROLE|OPENAI_API_KEY|LLM_API_KEY|IMAGE_GENERATION_API_KEY|IMAGE_PROVIDER_API_KEY|SUPABASE_SECRET" \
+  frontend/ --glob '!**/.env' --glob '!**/*.svg'
+
+# frontend env 변수명 — VITE_ 접두사만
+grep -E "^[A-Z_]+=" frontend/.env.example | grep -v "^VITE_" && echo "FAIL" || echo "OK: VITE_ only"
+
+# compose frontend에 secret 없는지 (주석 제외 확인)
+rg "environment:" -A5 docker-compose.yml
+
+# 전체 secret 스캔 (.env 제외)
 rg -i "service_role|sb_secret|sk-" --glob '!**/.env' --glob '!**/node_modules/**'
+
 git status   # .env 가 staged 되지 않았는지
 ```
 
 - Bearer token / service role key를 Slack·PR·채팅에 붙여넣지 않기
 - 에러 핸들러에서 `process.env` 전체 또는 key 값 로깅 금지
+- `backend/.env.example`에는 placeholder만 (`your-*-key` 형태)
 
 ---
 
@@ -314,8 +365,8 @@ git status   # .env 가 staged 되지 않았는지
 | `backend/src/services/supabase.service.js` | `supabase` (anon), `supabaseAdmin` (service role) |
 | `backend/src/services/llm.service.js` | `LLM_API_KEY` → OpenAI Chat Completions (server-only) |
 | `backend/src/services/imageGeneration.service.js` | `IMAGE_GENERATION_API_KEY` → Images API (server-only) |
-| `backend/src/services/storage.service.js` | `supabaseAdmin` → `generated-emoticons` upload · signed URL |
-| `backend/src/services/generation.service.js` | `emoticon_generations` CRUD (service role) |
+| `backend/src/services/storage.service.js` | `supabaseAdmin` · `validateUserUploadOwnership()` |
+| `backend/src/services/generation.service.js` | `emoticon_generations` CRUD (service role + `user_id` 필터) |
 | `backend/src/controllers/prompt.controller.js` | 실패 시 고정 500 메시지, key·stack 미노출 |
 | `backend/src/controllers/generation.controller.js` | 실패 시 `failed` UPDATE + 고정 500 메시지 |
 

@@ -11,6 +11,7 @@
 - 2026-06-03 (Day 3 — `emoticon_generations` RLS · Backend 인증 미들웨어 반영)
 - 2026-06-07 (Day 9 — 갤러리 목록 조회 보안 정책 반영)
 - 2026-06-07 (Day 10 — 삭제 API 보안 정책 반영)
+- 2026-06-07 (Day 12 — originalImageUrl 소유 검증·보호 API·정보 노출 최소화 반영)
 
 ## 스택 전제
 
@@ -41,7 +42,7 @@
 | 헤더 | `Authorization: Bearer {access_token}` 만 허용 |
 | 검증 | `supabase.auth.getUser(token)` (anon/publishable key 클라이언트) |
 | 성공 시 | `req.user`, `req.accessToken` 설정 |
-| 실패 시 | `401` + `{ ok: false, error: { message } }` |
+| 실패 시 | `401` + `{ message, code: "UNAUTHORIZED" }` |
 
 예시 엔드포인트: `GET /api/auth/me` — 응답 `user.id`는 **토큰에서 검증된 값**만 사용.
 
@@ -128,6 +129,87 @@ create policy "emoticon_generations_delete_own"
 
 환경변수: `SUPABASE_SERVICE_ROLE_KEY` 또는 `SUPABASE_SECRET_KEY` (`backend/.env` 전용).  
 상세: `04-security/api-key-policy.md`
+
+---
+
+## Day 12 — 보안 점검 요약
+
+### 핵심 원칙
+
+| 항목 | 규칙 |
+|------|------|
+| 보호 API | **모든 보호 API는 `requireAuth` 통과 필수** — 미통과 시 `401` |
+| userId 출처 | **`req.user.id`만** — body/query/header의 `userId`·`user_id` **신뢰·미사용** |
+| service role | RLS bypass → 모든 DB/Storage 쿼리에 app-level `user_id` 필터 |
+| 정보 노출 | 존재하지 않거나 권한 없는 데이터 → **동일한 사용자 메시지** (열거 방지) |
+
+### generation API — `req.user.id` 기준
+
+| API | user_id 처리 |
+|-----|--------------|
+| `POST /api/generations` (생성) | `createGeneratingRecord({ userId: req.user.id, ... })` |
+| `GET /api/generations/me` (갤러리) | `.eq('user_id', req.user.id)` **필수** |
+| `DELETE /api/generations/:id` (삭제) | `.eq('id', :id).eq('user_id', req.user.id)` **동시 조건** |
+
+- 다른 사용자 JWT로 A의 generation id를 삭제 요청 → **삭제 불가** → `404` (`이모티콘을 찾을 수 없습니다.`)
+- A JWT로 B 데이터 갤러리 조회 → B row **미포함** (`total`/`items`에 없음)
+
+구현: `generation.controller.js`, `generation.service.js`
+
+---
+
+## 보호 API — requireAuth 적용 (Day 12)
+
+| API | Route | 미들웨어 |
+|-----|-------|----------|
+| 이미지 업로드 | `POST /api/uploads/image` | `requireAuth` |
+| 프롬프트 구체화 | `POST /api/prompts/refine` | `requireAuth` |
+| 이미지 생성 | `POST /api/generations` | `requireAuth` |
+| 갤러리 조회 | `GET /api/generations/me` | `requireAuth` |
+| 이모티콘 삭제 | `DELETE /api/generations/:id` | `requireAuth` |
+
+공개: `GET /health`, `GET /api/health` 만 인증 없음.
+
+---
+
+## Day 12 — originalImageUrl 소유 검증
+
+`POST /api/generations`에서 `originalImageUrl`이 전달되면 **본인 `user-uploads` 오브젝트**인지 검증합니다.  
+(값 없음 → optional, 기존처럼 통과)
+
+### 검증 규칙
+
+| 항목 | 규칙 |
+|------|------|
+| optional | 값 없음 → 통과 (text-to-image) |
+| bucket | `SUPABASE_UPLOAD_BUCKET` (기본 `user-uploads`) |
+| path | `{req.user.id}/...` 로 시작 |
+| 내 URL / path | 통과 |
+| 타 사용자 path | **403** `FORBIDDEN` — `원본 이미지에 접근할 권한이 없습니다.` |
+| 외부 URL (`https://example.com/...`) | **400** `VALIDATION_ERROR` |
+| user-uploads가 아닌 Storage URL | **400** `VALIDATION_ERROR` |
+
+### 구현·호출 순서
+
+```txt
+requireAuth → validateCreateGeneration (형식)
+   ↓
+createGeneration controller
+   ↓
+validateUserUploadOwnership({ originalImageUrl, userId: req.user.id })  ← provider 호출 전
+   ↓
+createGeneratingRecord → generateImageFromPrompt → ...
+```
+
+- `validateUserUploadOwnership()` — `storage.service.js`
+- `extractStoragePathFromUrl()` — Supabase Storage URL에서 object path 추출
+- 검증 실패 시 **DB insert·이미지 provider 호출 없음**
+- **original upload image(`user-uploads`)는 삭제하지 않음** — 소유 검증만 수행
+
+### 금지
+
+- 다른 사용자 `user-uploads/{userId}/...` URL을 reference image로 사용 ❌
+- 임의 외부 HTTP URL을 reference image로 사용 ❌
 
 ---
 
@@ -228,6 +310,9 @@ generated_image_url Storage 삭제 (best effort)
 9. `DELETE /api/generations/:id` — 사용자 A JWT + B의 id → `404` (존재 여부 미노출)
 10. `DELETE /api/generations/:id` — 존재하지 않는 uuid → `404` (B의 id와 동일 메시지)
 11. `DELETE /api/generations/:id` — Authorization 없음 → `401`
+12. `POST /api/generations` — 타 사용자 `user-uploads` URL → `403 FORBIDDEN`
+13. `POST /api/generations` — `https://example.com/test.png` → `400 VALIDATION_ERROR`
+14. `POST /api/generations` — 본인 업로드 URL → 통과 (provider 호출 전 검증)
 
 ---
 

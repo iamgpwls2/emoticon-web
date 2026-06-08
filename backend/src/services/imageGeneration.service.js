@@ -231,10 +231,14 @@ async function callImageGenerationProvider(params) {
  * finalPrompt와 (선택) originalImageUrl로 외부 이미지 생성 API를 호출하고 Buffer를 반환합니다.
  * backend controller에서만 호출하세요.
  *
- * @param {{ finalPrompt: string, originalImageUrl?: string }} params
+ * @param {{ finalPrompt: string, originalImageUrl?: string, userId?: string }} params
  * @returns {Promise<{ imageBuffer: Buffer, mimeType: string }>}
  */
-export async function generateImageFromPrompt({ finalPrompt, originalImageUrl }) {
+export async function generateImageFromPrompt({
+  finalPrompt,
+  originalImageUrl,
+  userId,
+}) {
   const prompt = assertFinalPrompt(finalPrompt);
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
   const apiKey = getImageGenerationApiKey();
@@ -255,7 +259,8 @@ export async function generateImageFromPrompt({ finalPrompt, originalImageUrl })
     if (trimmedOriginalImageUrl) {
       const referenceImage = await downloadReferenceImageByUrl(
         trimmedOriginalImageUrl,
-        controller.signal
+        controller.signal,
+        userId
       );
       referenceImageBuffer = referenceImage.imageBuffer;
       referenceMimeType = referenceImage.mimeType;

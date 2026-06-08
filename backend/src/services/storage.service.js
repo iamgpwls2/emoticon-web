@@ -1,4 +1,15 @@
 import { supabaseAdmin } from '../config/supabase.js';
+import { HttpError } from '../utils/httpError.js';
+import {
+  getUploadBucketName,
+  isValidHttpOrHttpsUrl,
+  parseSupabaseStorageObjectUrl,
+} from '../validators/shared.validation.js';
+
+const UPLOAD_OWNERSHIP_FORBIDDEN_MESSAGE =
+  '원본 이미지에 접근할 권한이 없습니다.';
+const UPLOAD_OWNERSHIP_VALIDATION_MESSAGE =
+  '본인이 업로드한 이미지 URL만 사용할 수 있습니다.';
 
 const GENERATED_EMOTICONS_BUCKET = 'generated-emoticons';
 const DEFAULT_GENERATED_MIME_TYPE = 'image/png';
@@ -35,23 +46,99 @@ function guessMimeTypeFromPath(path) {
   return null;
 }
 
-function parseSupabaseStorageObjectUrl(urlString) {
-  try {
-    const url = new URL(urlString);
-    const match = url.pathname.match(
-      /^\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/
-    );
-
-    if (!match) {
-      return null;
-    }
-
-    return {
-      bucket: decodeURIComponent(match[1]),
-      path: decodeURIComponent(match[2]),
-    };
-  } catch {
+/**
+ * Supabase Storage object URL에서 지정 bucket의 object path를 추출합니다.
+ * @param {string} url
+ * @param {string} [bucketName]
+ * @returns {string | null}
+ */
+export function extractStoragePathFromUrl(url, bucketName) {
+  const trimmedUrl = typeof url === 'string' ? url.trim() : '';
+  if (!trimmedUrl) {
     return null;
+  }
+
+  const storageRef = parseSupabaseStorageObjectUrl(trimmedUrl);
+  if (!storageRef) {
+    return null;
+  }
+
+  const bucket = bucketName || getUploadBucketName();
+  if (storageRef.bucket !== bucket) {
+    return null;
+  }
+
+  return storageRef.path;
+}
+
+/**
+ * originalImageUrl 또는 object path가 현재 사용자의 user-uploads 오브젝트인지 검증합니다.
+ * 값이 없으면 통과합니다.
+ *
+ * @param {{ originalImageUrl?: string, userId: string }} params
+ * @throws {import('../utils/httpError.js').HttpError}
+ */
+export function validateUserUploadOwnership({ originalImageUrl, userId }) {
+  const trimmedValue =
+    typeof originalImageUrl === 'string' ? originalImageUrl.trim() : '';
+  if (!trimmedValue) {
+    return;
+  }
+
+  const uploadBucket = getUploadBucketName();
+  const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+
+  let objectPath = null;
+
+  if (isValidHttpOrHttpsUrl(trimmedValue)) {
+    objectPath = extractStoragePathFromUrl(trimmedValue, uploadBucket);
+    if (!objectPath) {
+      throw HttpError.validation(UPLOAD_OWNERSHIP_VALIDATION_MESSAGE, {
+        errors: [
+          {
+            field: 'originalImageUrl',
+            message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+          },
+        ],
+      });
+    }
+  } else if (!trimmedValue.includes('://')) {
+    objectPath = trimmedValue;
+    if (!objectPath.includes('/')) {
+      throw HttpError.validation(UPLOAD_OWNERSHIP_VALIDATION_MESSAGE, {
+        errors: [
+          {
+            field: 'originalImageUrl',
+            message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+          },
+        ],
+      });
+    }
+  } else {
+    throw HttpError.validation(UPLOAD_OWNERSHIP_VALIDATION_MESSAGE, {
+      errors: [
+        {
+          field: 'originalImageUrl',
+          message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+        },
+      ],
+    });
+  }
+
+  if (!normalizedUserId || !objectPath.startsWith(`${normalizedUserId}/`)) {
+    throw HttpError.forbidden(UPLOAD_OWNERSHIP_FORBIDDEN_MESSAGE);
+  }
+}
+
+function assertUserOwnedUploadPath(userId, bucket, path) {
+  const uploadBucket = getUploadBucketName();
+  if (bucket !== uploadBucket) {
+    return;
+  }
+
+  const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+  if (!normalizedUserId || !path.startsWith(`${normalizedUserId}/`)) {
+    throw createServiceError('Reference image is not owned by the user.');
   }
 }
 
@@ -90,13 +177,22 @@ async function downloadImageBufferFromHttpUrl(imageUrl, signal) {
  *
  * @param {string} originalImageUrl
  * @param {AbortSignal} [signal]
+ * @param {string} [userId] 전달 시 user-uploads 경로 소유자 검증
  * @returns {Promise<{ imageBuffer: Buffer, mimeType: string }>}
  */
-export async function downloadReferenceImageByUrl(originalImageUrl, signal) {
+export async function downloadReferenceImageByUrl(
+  originalImageUrl,
+  signal,
+  userId
+) {
   const trimmedUrl = assertNonEmptyString(originalImageUrl, 'originalImageUrl');
   const storageRef = parseSupabaseStorageObjectUrl(trimmedUrl);
 
   if (storageRef) {
+    if (userId) {
+      assertUserOwnedUploadPath(userId, storageRef.bucket, storageRef.path);
+    }
+
     const { data, error } = await supabaseAdmin.storage
       .from(storageRef.bucket)
       .download(storageRef.path);
@@ -121,6 +217,10 @@ export async function downloadReferenceImageByUrl(originalImageUrl, signal) {
         guessMimeTypeFromPath(storageRef.path) ||
         DEFAULT_GENERATED_MIME_TYPE,
     };
+  }
+
+  if (userId) {
+    throw createServiceError('Reference image must be uploaded by the user.');
   }
 
   return downloadImageBufferFromHttpUrl(trimmedUrl, signal);

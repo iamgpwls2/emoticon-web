@@ -7,7 +7,10 @@ import {
 } from '../services/generation.service.js';
 import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
 import { applyCharacterPreservationGuards } from '../services/llm.service.js';
-import { uploadGeneratedEmoticon } from '../services/storage.service.js';
+import {
+  uploadGeneratedEmoticon,
+  validateUserUploadOwnership,
+} from '../services/storage.service.js';
 import { HttpError } from '../utils/httpError.js';
 
 const DEFAULT_LIST_LIMIT = 12;
@@ -77,6 +80,12 @@ export async function createGeneration(req, res) {
   } = req.body;
 
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
+
+  validateUserUploadOwnership({
+    originalImageUrl: trimmedOriginalImageUrl,
+    userId,
+  });
+
   const hasReferenceImage = Boolean(trimmedOriginalImageUrl);
   const trimmedInputText =
     typeof inputText === 'string' ? inputText.trim() : '';
@@ -121,6 +130,7 @@ export async function createGeneration(req, res) {
     const { imageBuffer, mimeType } = await generateImageFromPrompt({
       finalPrompt: imageGenerationPrompt,
       originalImageUrl: trimmedOriginalImageUrl,
+      userId,
     });
     const { generatedImageUrl } = await uploadGeneratedEmoticon(
       userId,

@@ -1,6 +1,7 @@
 import { HttpError } from '../utils/httpError.js';
 import {
   INPUT_TEXT_MAX_LENGTH,
+  getUserOwnedUploadUrlValidationError,
   isNonEmptyString,
   pushOptionalStringField,
   trimOptionalOriginalImageUrl,
@@ -45,6 +46,23 @@ export function validatePromptRefine(req, res, next) {
   if (errors.length > 0) {
     return next(
       HttpError.validation('입력값을 확인해 주세요.', { errors })
+    );
+  }
+
+  const originalImageUrlError = getUserOwnedUploadUrlValidationError(
+    req.user?.id,
+    originalImageUrl
+  );
+  if (originalImageUrlError) {
+    return next(
+      HttpError.validation('본인이 업로드한 이미지 URL만 사용할 수 있습니다.', {
+        errors: [
+          {
+            field: 'originalImageUrl',
+            message: originalImageUrlError,
+          },
+        ],
+      })
     );
   }
 

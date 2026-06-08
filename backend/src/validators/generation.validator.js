@@ -57,7 +57,8 @@ export function validateCreateGeneration(req, res, next) {
   if (
     typeof originalImageUrl === 'string' &&
     originalImageUrl.trim() &&
-    !isValidHttpOrHttpsUrl(originalImageUrl)
+    !isValidHttpOrHttpsUrl(originalImageUrl) &&
+    originalImageUrl.includes('://')
   ) {
     return next(
       HttpError.validation('원본 이미지 URL 형식이 올바르지 않습니다.', {

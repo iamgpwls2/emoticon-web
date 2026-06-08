@@ -11,6 +11,7 @@
 - 2026-06-03 (Day 4 — `user-uploads` 버킷·업로드 경로 규칙 반영)
 - 2026-06-06 (Day 7 — `generated-emoticons` bucket·생성 결과 경로 반영)
 - 2026-06-07 (Day 10 — generated image 삭제 정책 반영)
+- 2026-06-07 (Day 12 — originalImageUrl 소유 검증·path 분리 정책 반영)
 
 ## 스택 전제
 
@@ -246,6 +247,40 @@ generated_image_url (signed/public URL)
 ```
 
 > Day 4 업로드 API(`POST /api/uploads/image`)는 변경 없음.
+
+---
+
+## Day 12 — path 분리 · originalImageUrl 정책
+
+### bucket별 path 규칙
+
+| Bucket | Object path | user_id 분리 |
+|--------|-------------|--------------|
+| `user-uploads` | `{user_id}/{timestamp}-{uuid}.{ext}` | ✅ prefix = `req.user.id` |
+| `generated-emoticons` | `{user_id}/{generation_id}.png` | ✅ prefix = `req.user.id` |
+
+- backend service role 업로드 시에도 path prefix는 **반드시 JWT 검증된 `req.user.id`**
+- 클라이언트가 보낸 `user_id`로 path를 만들지 않음
+
+### originalImageUrl 허용 범위 (`POST /api/generations`)
+
+| 값 | 결과 |
+|----|------|
+| 없음 | 통과 (reference image 없이 생성) |
+| `user-uploads` URL · path가 `{userId}/...` | 통과 (`userId` = `req.user.id`) |
+| 다른 사용자 `{otherUserId}/...` | **403** — provider 호출 전 차단 |
+| 외부 URL (`https://example.com/...`) | **400** — user-uploads만 허용 |
+
+구현: `storage.service.js` → `validateUserUploadOwnership()`, `extractStoragePathFromUrl()`
+
+### 삭제 범위 (Day 10 + Day 12)
+
+| 대상 | 삭제 API | MVP |
+|------|----------|-----|
+| **generated image** (`generated-emoticons`) | `DELETE /api/generations/:id` | ✅ Storage best-effort 삭제 |
+| **original upload** (`user-uploads`) | — | ❌ **삭제하지 않음** |
+
+- Day 12 작업은 original upload **소유 검증만** 추가 — original 파일 자체는 유지
 
 ---
 
