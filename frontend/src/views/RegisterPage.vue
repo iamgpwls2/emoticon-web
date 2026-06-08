@@ -13,6 +13,8 @@ const password = ref('')
 const passwordConfirm = ref('')
 const submitting = ref(false)
 const formError = ref('')
+const showPassword = ref(false)
+const showPasswordConfirm = ref(false)
 
 const fieldErrors = reactive({
   email: '',
@@ -115,77 +117,233 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <section class="auth-page">
-    <div class="auth-card">
-      <h1>회원가입</h1>
-      <p class="auth-lead">이모티콘 생성을 시작하려면 계정을 만들어 주세요.</p>
+  <section class="auth-page auth-page--register">
+    <div class="auth-page__decor" aria-hidden="true">
+      <span class="auth-page__sparkle auth-page__sparkle--1">✦</span>
+      <span class="auth-page__sparkle auth-page__sparkle--2">✦</span>
+      <span class="auth-page__sparkle auth-page__sparkle--3">✦</span>
+      <span class="auth-page__circle auth-page__circle--1" />
+      <span class="auth-page__circle auth-page__circle--2" />
+      <span class="auth-page__dots auth-page__dots--1" />
+      <span class="auth-page__dots auth-page__dots--2" />
+    </div>
 
-      <form class="auth-form" novalidate @submit.prevent="handleSubmit">
-        <div class="auth-field">
-          <label for="register-email">이메일</label>
-          <input
-            id="register-email"
-            v-model="email"
-            type="email"
-            autocomplete="email"
-            placeholder="you@example.com"
-            :aria-invalid="Boolean(fieldErrors.email)"
-            :disabled="submitting"
-          />
-          <p v-if="fieldErrors.email" class="auth-field-error" role="alert">
-            {{ fieldErrors.email }}
-          </p>
-        </div>
-
-        <div class="auth-field">
-          <label for="register-password">비밀번호</label>
-          <input
-            id="register-password"
-            v-model="password"
-            type="password"
-            autocomplete="new-password"
-            placeholder="6자 이상"
-            :aria-invalid="Boolean(fieldErrors.password)"
-            :disabled="submitting"
-          />
-          <p v-if="fieldErrors.password" class="auth-field-error" role="alert">
-            {{ fieldErrors.password }}
-          </p>
-        </div>
-
-        <div class="auth-field">
-          <label for="register-password-confirm">비밀번호 확인</label>
-          <input
-            id="register-password-confirm"
-            v-model="passwordConfirm"
-            type="password"
-            autocomplete="new-password"
-            placeholder="비밀번호 재입력"
-            :aria-invalid="Boolean(fieldErrors.passwordConfirm)"
-            :disabled="submitting"
-          />
-          <p
-            v-if="fieldErrors.passwordConfirm"
-            class="auth-field-error"
-            role="alert"
-          >
-            {{ fieldErrors.passwordConfirm }}
-          </p>
-        </div>
-
-        <p v-if="formError" class="auth-form-error" role="alert">
-          {{ formError }}
+    <div class="auth-page__content">
+      <header class="auth-page__intro">
+        <h1 class="auth-page__title">회원가입</h1>
+        <p class="auth-page__subtitle">
+          이모티콘 생성을 시작하려면 계정을 만들어 주세요.
         </p>
+      </header>
 
-        <button type="submit" class="auth-submit" :disabled="submitting">
-          {{ submitting ? '가입 중…' : '회원가입' }}
-        </button>
-      </form>
+      <div class="auth-card auth-card--register">
+        <form class="auth-form auth-form--register" novalidate @submit.prevent="handleSubmit">
+          <div class="auth-field">
+            <label for="register-email">이메일 주소</label>
+            <div
+              class="auth-input-wrap"
+              :class="{ 'auth-input-wrap--invalid': Boolean(fieldErrors.email) }"
+            >
+              <span class="auth-input-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M4 7h16v10H4V7Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    d="M4 7l8 6 8-6"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+              <input
+                id="register-email"
+                v-model="email"
+                type="email"
+                autocomplete="email"
+                placeholder="you@example.com"
+                :aria-invalid="Boolean(fieldErrors.email)"
+                :disabled="submitting"
+              />
+            </div>
+            <p v-if="fieldErrors.email" class="auth-field-error" role="alert">
+              {{ fieldErrors.email }}
+            </p>
+          </div>
 
-      <p class="auth-footer">
-        이미 계정이 있나요?
-        <router-link to="/login">로그인</router-link>
-      </p>
+          <div class="auth-field">
+            <label for="register-password">비밀번호</label>
+            <div
+              class="auth-input-wrap"
+              :class="{ 'auth-input-wrap--invalid': Boolean(fieldErrors.password) }"
+            >
+              <span class="auth-input-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect
+                    x="5"
+                    y="11"
+                    width="14"
+                    height="10"
+                    rx="2"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M8 11V8a4 4 0 1 1 8 0v3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
+              <input
+                id="register-password"
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                placeholder="6자 이상"
+                :aria-invalid="Boolean(fieldErrors.password)"
+                :disabled="submitting"
+              />
+              <button
+                type="button"
+                class="auth-input-toggle"
+                :aria-label="showPassword ? '비밀번호 숨기기' : '비밀번호 보기'"
+                :disabled="submitting"
+                @click="showPassword = !showPassword"
+              >
+                <svg
+                  v-if="showPassword"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8" />
+                </svg>
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path d="M4 4l16 16" stroke="currentColor" stroke-width="1.8" />
+                </svg>
+              </button>
+            </div>
+            <p v-if="fieldErrors.password" class="auth-field-error" role="alert">
+              {{ fieldErrors.password }}
+            </p>
+          </div>
+
+          <div class="auth-field">
+            <label for="register-password-confirm">비밀번호 확인</label>
+            <div
+              class="auth-input-wrap"
+              :class="{
+                'auth-input-wrap--invalid': Boolean(fieldErrors.passwordConfirm),
+              }"
+            >
+              <span class="auth-input-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect
+                    x="5"
+                    y="11"
+                    width="14"
+                    height="10"
+                    rx="2"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M8 11V8a4 4 0 1 1 8 0v3"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
+              <input
+                id="register-password-confirm"
+                v-model="passwordConfirm"
+                :type="showPasswordConfirm ? 'text' : 'password'"
+                autocomplete="new-password"
+                placeholder="비밀번호 재입력"
+                :aria-invalid="Boolean(fieldErrors.passwordConfirm)"
+                :disabled="submitting"
+              />
+              <button
+                type="button"
+                class="auth-input-toggle"
+                :aria-label="showPasswordConfirm ? '비밀번호 숨기기' : '비밀번호 보기'"
+                :disabled="submitting"
+                @click="showPasswordConfirm = !showPasswordConfirm"
+              >
+                <svg
+                  v-if="showPasswordConfirm"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8" />
+                </svg>
+                <svg
+                  v-else
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                  />
+                  <path d="M4 4l16 16" stroke="currentColor" stroke-width="1.8" />
+                </svg>
+              </button>
+            </div>
+            <p
+              v-if="fieldErrors.passwordConfirm"
+              class="auth-field-error"
+              role="alert"
+            >
+              {{ fieldErrors.passwordConfirm }}
+            </p>
+          </div>
+
+          <p v-if="formError" class="auth-form-error" role="alert">
+            {{ formError }}
+          </p>
+
+          <button type="submit" class="auth-submit auth-submit--register" :disabled="submitting">
+            {{ submitting ? '가입 중…' : '회원가입' }}
+          </button>
+        </form>
+
+        <p class="auth-footer auth-footer--register">
+          이미 계정이 있나요?
+          <router-link to="/login">로그인</router-link>
+        </p>
+      </div>
     </div>
   </section>
 </template>

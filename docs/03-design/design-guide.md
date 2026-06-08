@@ -12,6 +12,7 @@
 - 2026-06-06 (Day 8 — 로딩·결과·다운로드 UI 기준 반영)
 - 2026-06-07 (Day 9 — 갤러리 UI 기준 반영)
 - 2026-06-07 (Day 11 — ErrorMessage variant·async 상태·empty/loading 기준 반영)
+- 2026-06-08 (랜딩 페이지 · 공통 헤더 · 회원가입 UI · 로고 아이콘 반영)
 
 > 확정 디자인이 아닌 **MVP 기준**입니다. 이후 단계에서 시각 언어를 보강할 수 있습니다.
 
@@ -22,6 +23,60 @@
 - **간결함** — 한 화면에 한 가지 흐름(업로드 → 입력 → 다음 단계)
 - **명확한 피드백** — 오류·disabled·글자 수를 즉시 표시
 - **복구 가능** — 검증 실패 후 값 수정·재시도 가능
+
+---
+
+## 전역 앱 셸 · 랜딩 톤 (2026-06-08)
+
+구현: `App.vue`, `AppHeader.vue`, `frontend/src/assets/main.css`
+
+마케팅·인증 화면은 **white / lavender / purple** 톤을 공유합니다. 생성·갤러리 등 기존 MVP 화면은 `style.css` 토큰(`--accent` 등)을 그대로 사용합니다.
+
+### 1. 공통 레이아웃
+
+```txt
+.app-shell
+├─ AppHeader (전 페이지 공통)
+└─ .app-main
+     └─ router-view (HomePage / RegisterPage / CreatePage …)
+```
+
+- `app-shell`: `overflow-x: hidden` — 모바일 가로 스크롤 방지
+- 헤더·랜딩 본문·푸터는 **동일한 중앙 기준선** (`--landing-shell-max`, `--landing-shell-gutter`) 사용
+
+### 2. 랜딩·헤더 공통 토큰
+
+| 토큰 | 값 | 용도 |
+|------|-----|------|
+| `--landing-shell-max` | `1240px` | 헤더 inner, hero/how/example shell, footer inner 최대 너비 |
+| `--landing-shell-gutter` | `48px` | 좌우 여백 (양쪽 합 `96px`) |
+| 메인 보라 | `#7c3aed`, `#8b5cf6`, `#6d28d9` | CTA gradient, 강조 텍스트 |
+| 제목 색 | `#1e2a4a`, `#17213f`, `#111827` | Hero·인증 제목 |
+| 보조 텍스트 | `#4a5578`, `#667085` | 설명·푸터 |
+| 보더 | `#ebe6ff`, `#e4defa`, `#ececf0` | 카드·입력·헤더 하단 |
+| 그림자 | `rgba(88, 74, 150, 0.08~0.12)` | 랜딩 카드 |
+| 인증 그림자 | `rgba(94, 70, 140, 0.12)` | 회원가입 form card |
+
+스타일 파일 분리:
+
+| 영역 | 파일 |
+|------|------|
+| Header, HomePage (`.home-page`) | `frontend/src/assets/main.css` |
+| 회원가입 전용 (`.auth-page--register`) | `frontend/src/style.css` |
+| 생성·갤러리 MVP | `frontend/src/style.css` (기존 `.auth-page` 등) |
+
+### 3. 공통 헤더 CTA (비로그인)
+
+| 위치 | 라벨 | 스타일 | 이동 |
+|------|------|--------|------|
+| 오른쪽 1 | 로그인 | `app-header__btn--secondary` (outline) | `/login` |
+| 오른쪽 2 | 회원가입 | `app-header__btn--primary` (보라 gradient) | `/register` (로그인 시 `/generate`) |
+
+로고·아이콘 상세: [`logo-icon.md`](./logo-icon.md)
+
+랜딩 페이지 상세: [`landing-page.md`](./landing-page.md)
+
+회원가입 페이지 상세: [`auth-register-page.md`](./auth-register-page.md)
 
 ---
 
@@ -345,6 +400,14 @@ disabled 버튼 클릭으로 오류를 **새로 표시하지 않음** — hint/e
 
 | 컴포넌트 | 용도 |
 |----------|------|
+| `AppHeader` | 전역 헤더 (브랜드·로그인/회원가입 또는 생성/갤러리/로그아웃) |
+| `LogoIcon` | 헤더 브랜드 토끼 실루엣 SVG |
+| `LandingHero` | 랜딩 Hero (텍스트 + preview) |
+| `LandingVisual` | Hero 오른쪽 이모티콘 preview flow |
+| `LandingHowItWorks` | 이용 방법 3단계 |
+| `LandingExampleStrip` | 예시 이모티콘 strip |
+| `LandingFooter` | 랜딩 푸터 |
+| `LandingStaticImage` | 정적 이미지 + emoji placeholder |
 | `ImageUploader` | 파일 선택·미리보기·업로드 (`useAsyncState`) |
 | `PromptForm` | 감정·모션·텍스트 입력 |
 | `PromptRefiner` | LLM 구체화 (`useAsyncState`) |
@@ -362,3 +425,6 @@ disabled 버튼 클릭으로 오류를 **새로 표시하지 않음** — hint/e
 - 에러 규격: `02-contracts/error-response.md`
 - 테스트: `05-roadmap/test-checklist.md`
 - 전역 스타일: `frontend/src/style.css` (`--accent`, `--border` 등)
+- 랜딩 UI: [`landing-page.md`](./landing-page.md)
+- 로고 아이콘: [`logo-icon.md`](./logo-icon.md)
+- 회원가입 UI: [`auth-register-page.md`](./auth-register-page.md)
