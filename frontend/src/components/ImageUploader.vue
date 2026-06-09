@@ -112,7 +112,7 @@ onUnmounted(() => {
     <div class="image-uploader__actions">
       <button
         type="button"
-        class="image-uploader__btn image-uploader__btn--secondary"
+        class="image-uploader__btn image-uploader__btn--primary"
         :disabled="uploading"
         @click="openFilePicker"
       >
@@ -121,7 +121,7 @@ onUnmounted(() => {
 
       <button
         type="button"
-        class="image-uploader__btn image-uploader__btn--primary"
+        class="image-uploader__btn image-uploader__btn--secondary"
         :disabled="!selectedFile || uploading"
         @click="handleUpload"
       >
@@ -141,6 +141,17 @@ onUnmounted(() => {
       />
     </div>
 
+    <div
+      v-else-if="!selectedFile"
+      class="image-uploader__placeholder"
+      aria-hidden="true"
+    >
+      <span class="image-uploader__placeholder-icon">🖼</span>
+      <span class="image-uploader__placeholder-text">
+        이미지를 선택하면 미리보기가 표시됩니다
+      </span>
+    </div>
+
     <ErrorMessage :message="errorMessage" variant="error" />
     <ErrorMessage :message="successMessage" variant="success" />
   </div>
@@ -149,8 +160,6 @@ onUnmounted(() => {
 <style scoped>
 .image-uploader {
   width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -164,61 +173,84 @@ onUnmounted(() => {
 .image-uploader__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
 }
 
 .image-uploader__btn {
-  flex: 1 1 120px;
+  flex: 1 1 160px;
   min-width: 0;
+  min-height: 56px;
   font-family: var(--sans);
   font-size: 16px;
-  font-weight: 500;
-  padding: 12px 16px;
-  border: 2px solid transparent;
-  border-radius: 8px;
+  font-weight: 600;
+  padding: 0 20px;
+  border-radius: 11px;
   cursor: pointer;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .image-uploader__btn--primary {
-  color: var(--accent);
-  background: var(--accent-bg);
+  border: 1px solid transparent;
+  color: #ffffff;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d3df2 55%, #5b21b6 100%);
+  box-shadow: 0 10px 24px rgba(109, 61, 242, 0.22);
+}
+
+.image-uploader__btn--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d3df2 55%, #4c1d95 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(109, 61, 242, 0.28);
 }
 
 .image-uploader__btn--secondary {
-  color: var(--text-h);
-  background: var(--social-bg);
-  border-color: var(--border);
+  border: 1px solid #ddd2ff;
+  color: #6d3df2;
+  background: #f1eaff;
 }
 
-.image-uploader__btn:hover:not(:disabled) {
-  border-color: var(--accent-border);
-  box-shadow: var(--shadow);
+.image-uploader__btn--secondary:hover:not(:disabled) {
+  border-color: #c4b5fd;
+  background: #eee8ff;
 }
 
 .image-uploader__btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid #6d3df2;
   outline-offset: 2px;
 }
 
 .image-uploader__btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.image-uploader__btn--secondary:disabled {
+  color: #7c86a3;
+  background: #eee8ff;
+  border-color: #e4defa;
 }
 
 .image-uploader__meta {
   margin: 0;
   font-size: 14px;
-  color: var(--text);
+  color: #7c86a3;
   word-break: break-all;
 }
 
 .image-uploader__preview-wrap {
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  max-width: 360px;
+  margin-inline: auto;
+  border: 1px solid #ddd2ff;
+  border-radius: 12px;
   overflow: hidden;
-  background: var(--code-bg);
+  background: #faf7ff;
 }
 
 .image-uploader__preview {
@@ -226,6 +258,33 @@ onUnmounted(() => {
   width: 100%;
   max-height: min(60vh, 360px);
   object-fit: contain;
+}
+
+.image-uploader__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 140px;
+  padding: 24px 16px;
+  border: 1px dashed #ddd2ff;
+  border-radius: 12px;
+  background: #faf7ff;
+  box-sizing: border-box;
+}
+
+.image-uploader__placeholder-icon {
+  font-size: 28px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.image-uploader__placeholder-text {
+  font-size: 14px;
+  color: #7c86a3;
+  text-align: center;
 }
 
 @media (max-width: 480px) {

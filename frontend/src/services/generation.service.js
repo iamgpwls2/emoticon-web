@@ -45,6 +45,7 @@ export async function createGeneration({
   inputText,
   storyPrompt,
   finalPrompt,
+  collectionId,
 }) {
   if (!isNonEmptyString(finalPrompt)) {
     throw new Error('finalPrompt는 필수값입니다.');
@@ -64,6 +65,10 @@ export async function createGeneration({
   const trimmedOriginalImageUrl = originalImageUrl?.trim();
   if (trimmedOriginalImageUrl) {
     payload.originalImageUrl = trimmedOriginalImageUrl;
+  }
+  const trimmedCollectionId = collectionId?.trim();
+  if (trimmedCollectionId) {
+    payload.collectionId = trimmedCollectionId;
   }
 
   const response = await fetch(`${API_BASE_URL}/api/generations`, {
@@ -98,7 +103,11 @@ export async function createGeneration({
  *   hasMore: boolean,
  * }>}
  */
-export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
+export async function fetchMyGenerations({
+  page = 1,
+  limit = 12,
+  collectionId,
+} = {}) {
   const accessToken = await getAccessToken(
     '이모티콘 목록을 보려면 로그인이 필요합니다.'
   );
@@ -107,6 +116,9 @@ export async function fetchMyGenerations({ page = 1, limit = 12 } = {}) {
     page: String(page),
     limit: String(limit),
   });
+  if (typeof collectionId === 'string' && collectionId.trim()) {
+    query.set('collectionId', collectionId.trim());
+  }
 
   const response = await fetch(
     `${API_BASE_URL}/api/generations/me?${query.toString()}`,

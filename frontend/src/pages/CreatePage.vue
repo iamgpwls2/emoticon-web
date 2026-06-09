@@ -170,224 +170,83 @@ async function handleRegenerate() {
 </script>
 
 <template>
-  <section class="create-page">
-    <LoadingOverlay :visible="isGenerating" />
+  <section class="create-page create-page--builder">
+    <LoadingOverlay
+      :visible="isGenerating"
+      message="이모티콘을 생성하는 중입니다."
+    />
 
-    <div class="create-page__card">
+    <div class="create-page__decor" aria-hidden="true">
+      <span class="create-page__sparkle create-page__sparkle--1">✦</span>
+      <span class="create-page__sparkle create-page__sparkle--2">✦</span>
+      <span class="create-page__sparkle create-page__sparkle--3">✦</span>
+      <span class="create-page__circle create-page__circle--1" />
+      <span class="create-page__circle create-page__circle--2" />
+      <span class="create-page__dots create-page__dots--1" />
+      <span class="create-page__dots create-page__dots--2" />
+    </div>
+
+    <div class="create-page__inner">
       <header class="create-page__header">
-        <h1>이모티콘 생성</h1>
+        <h1 class="create-page__title">이모티콘 생성</h1>
         <p class="create-page__lead">
           이미지를 업로드하고 감정·모션·텍스트를 입력한 뒤 다음 단계로
           진행합니다.
         </p>
       </header>
 
-      <div class="create-page__section">
-        <h2 class="create-page__section-title">1. 이미지 업로드</h2>
-        <ImageUploader @uploaded="onUploaded" />
-      </div>
+      <div class="create-builder-card">
+        <div class="create-page__section">
+          <h2 class="create-page__section-title">1. 이미지 업로드</h2>
+          <ImageUploader @uploaded="onUploaded" />
+        </div>
 
-      <div class="create-page__section">
-        <h2 class="create-page__section-title">2. 이모티콘 설정</h2>
-        <PromptForm
-          @update:form="onFormUpdate"
-          @interaction="onPromptInteraction"
-        />
-        <fieldset
-          class="create-page__refiner-fieldset"
-          :disabled="isGenerating"
-        >
-          <PromptRefiner
-            :emotion="promptForm.emotion"
-            :motion="promptForm.motion"
-            :input-text="promptForm.text"
-            :original-image-url="originalImageUrl"
-            @update:story-prompt="storyPrompt = $event"
-            @update:final-prompt="finalPrompt = $event"
+        <div class="create-page__section">
+          <h2 class="create-page__section-title">2. 이모티콘 설정</h2>
+          <PromptForm
+            @update:form="onFormUpdate"
+            @interaction="onPromptInteraction"
           />
-        </fieldset>
-      </div>
+          <fieldset
+            class="create-page__refiner-fieldset"
+            :disabled="isGenerating"
+          >
+            <PromptRefiner
+              :emotion="promptForm.emotion"
+              :motion="promptForm.motion"
+              :input-text="promptForm.text"
+              :original-image-url="originalImageUrl"
+              @update:story-prompt="storyPrompt = $event"
+              @update:final-prompt="finalPrompt = $event"
+            />
+          </fieldset>
+        </div>
 
-      <GenerationResult
-        :generated-image-url="generatedImageUrl"
-        :original-image-url="originalImageUrl"
-        :final-prompt="finalPrompt"
-        :generation-id="generationId"
-        :is-generating="isGenerating"
-        :can-regenerate="canRegenerate"
-        :regenerate-error-message="regenerateErrorMessage"
-        @regenerate="handleRegenerate"
-      />
+        <div class="create-page__actions">
+          <ErrorMessage :message="imageHintMessage" variant="hint" />
+          <ErrorMessage :message="finalPromptHintMessage" variant="hint" />
+          <ErrorMessage :message="generationErrorMessage" variant="error" />
+          <button
+            type="button"
+            class="create-page__generate-btn"
+            :disabled="isGenerateDisabled"
+            @click="handleGenerateImage"
+          >
+            {{ generateButtonLabel }}
+          </button>
+        </div>
 
-      <div class="create-page__actions">
-        <ErrorMessage :message="imageHintMessage" variant="hint" />
-        <ErrorMessage :message="finalPromptHintMessage" variant="hint" />
-        <ErrorMessage :message="generationErrorMessage" variant="error" />
-        <button
-          type="button"
-          class="create-page__next-btn"
-          :disabled="isGenerateDisabled"
-          @click="handleGenerateImage"
-        >
-          {{ generateButtonLabel }}
-        </button>
+        <GenerationResult
+          :generated-image-url="generatedImageUrl"
+          :original-image-url="originalImageUrl"
+          :final-prompt="finalPrompt"
+          :generation-id="generationId"
+          :is-generating="isGenerating"
+          :can-regenerate="canRegenerate"
+          :regenerate-error-message="regenerateErrorMessage"
+          @regenerate="handleRegenerate"
+        />
       </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.create-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-grow: 1;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 32px 20px;
-  text-align: left;
-}
-
-.create-page__card {
-  width: 100%;
-  max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-@media (min-width: 641px) {
-  .create-page__card {
-    max-width: 720px;
-  }
-}
-
-.create-page__header h1 {
-  font-size: 36px;
-  margin: 0 0 12px;
-  text-align: center;
-  color: var(--text-h);
-}
-
-.create-page__lead {
-  margin: 0;
-  text-align: center;
-  line-height: 1.5;
-}
-
-.create-page__section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-}
-
-.create-page__section > :not(.create-page__section-title) {
-  width: 100%;
-  max-width: 480px;
-  margin-inline: auto;
-}
-
-@media (min-width: 641px) {
-  .create-page__section > :not(.create-page__section-title) {
-    max-width: 720px;
-  }
-}
-
-.create-page__section-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-.create-page__refiner-fieldset {
-  margin: 0;
-  padding: 0;
-  border: none;
-  min-width: 0;
-  width: 100%;
-}
-
-.create-page__refiner-fieldset:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.create-page__actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 480px;
-  margin-inline: auto;
-  padding-top: 4px;
-}
-
-@media (min-width: 641px) {
-  .create-page__actions {
-    max-width: 720px;
-  }
-}
-
-.create-page__next-btn {
-  width: 100%;
-  min-height: 44px;
-  font-family: var(--sans);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1.4;
-  padding: 10px 16px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  cursor: pointer;
-  transition: border-color 0.3s, box-shadow 0.3s, opacity 0.2s,
-    background-color 0.2s;
-}
-
-.create-page__next-btn:hover:not(:disabled) {
-  border-color: var(--accent-border);
-  box-shadow: var(--shadow);
-}
-
-.create-page__next-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.create-page__next-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  color: var(--text);
-  background: var(--social-bg);
-  border-color: var(--border);
-  box-shadow: none;
-}
-
-@media (max-width: 480px) {
-  .create-page {
-    padding: 24px 16px;
-  }
-
-  .create-page__card {
-    max-width: 100%;
-    gap: 24px;
-  }
-
-  .create-page__header h1 {
-    font-size: 28px;
-  }
-
-  .create-page__section-title {
-    font-size: 16px;
-  }
-
-  .create-page__section > :not(.create-page__section-title),
-  .create-page__actions {
-    max-width: 100%;
-  }
-}
-</style>

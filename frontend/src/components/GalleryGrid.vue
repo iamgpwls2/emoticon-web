@@ -18,9 +18,21 @@ defineProps({
     type: String,
     default: '',
   },
+  movingIds: {
+    type: Array,
+    default: () => [],
+  },
+  selectionMode: {
+    type: Boolean,
+    default: false,
+  },
+  selectedIds: {
+    type: Array,
+    default: () => [],
+  },
 })
 
-defineEmits(['delete'])
+defineEmits(['delete', 'toggle-select', 'drag-start'])
 </script>
 
 <template>
@@ -53,8 +65,13 @@ defineEmits(['delete'])
       :input-text="item.inputText"
       :created-at="item.createdAt"
       :status="item.status"
+      :selection-mode="selectionMode"
+      :selected="selectedIds.includes(item.id)"
       :deleting="deletingId === item.id"
+      :moving="movingIds.includes(item.id)"
       @delete="$emit('delete', $event)"
+      @toggle-select="$emit('toggle-select', $event)"
+      @drag-start="$emit('drag-start', $event)"
     />
   </div>
 </template>

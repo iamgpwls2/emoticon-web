@@ -28,9 +28,7 @@ export function validatePromptInput({ emotion, motion, text, hasImage }) {
   }
 
   const textValue = trimValue(text)
-  if (!textValue) {
-    errors.text = '텍스트를 입력해 주세요.'
-  } else if (textValue.length > EMOTICON_TEXT_MAX_LENGTH) {
+  if (textValue.length > EMOTICON_TEXT_MAX_LENGTH) {
     errors.text = `텍스트는 최대 ${EMOTICON_TEXT_MAX_LENGTH}자까지 입력할 수 있습니다.`
   }
 

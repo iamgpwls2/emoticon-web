@@ -30,7 +30,7 @@ async function handleLogout() {
   <div class="logout-button">
     <button
       type="button"
-      class="app-nav-btn app-nav-btn--logout"
+      class="app-header__btn app-header__btn--secondary"
       :disabled="submitting"
       @click="handleLogout"
     >

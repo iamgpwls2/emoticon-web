@@ -58,7 +58,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && isAuthenticated) {
-    return { path: '/gallery' }
+    return { path: '/generate' }
   }
 
   return true

@@ -6,7 +6,7 @@ defineProps({
   },
   message: {
     type: String,
-    default: '이모티콘을 생성하는 중입니다. 잠시만 기다려 주세요.',
+    default: '이모티콘을 생성하는 중입니다.',
   },
 })
 </script>
@@ -39,37 +39,40 @@ defineProps({
   padding: 24px;
   box-sizing: border-box;
   pointer-events: all;
-  background: rgba(8, 6, 13, 0.35);
+  background: rgba(251, 248, 255, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .loading-overlay__panel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  width: min(100%, 360px);
-  padding: 24px 20px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: var(--shadow);
+  gap: 18px;
+  width: min(100%, 380px);
+  padding: 32px 28px;
+  border: 1px solid #e4defa;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 20px 48px rgba(94, 70, 140, 0.14);
   text-align: center;
 }
 
 .loading-overlay__spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent);
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e4defa;
+  border-top-color: #6d3df2;
   border-radius: 50%;
   animation: loading-overlay-spin 0.8s linear infinite;
 }
 
 .loading-overlay__message {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--text-h);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: #111827;
   word-break: keep-all;
 }
 
@@ -93,39 +96,26 @@ defineProps({
   .loading-overlay {
     align-items: flex-end;
     padding: 16px;
-    background: rgba(8, 6, 13, 0.2);
   }
 
   .loading-overlay__panel {
     width: 100%;
     flex-direction: row;
     justify-content: flex-start;
-    gap: 14px;
-    padding: 16px;
-    border-radius: 12px;
+    gap: 16px;
+    padding: 20px 18px;
+    border-radius: 16px;
     text-align: left;
   }
 
   .loading-overlay__spinner {
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
   }
 
   .loading-overlay__message {
-    font-size: 14px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .loading-overlay {
-    background: rgba(0, 0, 0, 0.45);
-  }
-
-  @media (max-width: 480px) {
-    .loading-overlay {
-      background: rgba(0, 0, 0, 0.3);
-    }
+    font-size: 15px;
   }
 }
 </style>

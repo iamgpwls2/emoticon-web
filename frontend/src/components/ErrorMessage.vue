@@ -44,8 +44,8 @@ const ariaLive = computed(() =>
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
   font-size: 14px;
   line-height: 1.45;
   word-break: break-word;
@@ -53,9 +53,9 @@ const ariaLive = computed(() =>
 }
 
 .status-message--error {
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
-  border: 1px solid rgba(220, 38, 38, 0.2);
+  color: #ff4d6d;
+  background: rgba(255, 77, 109, 0.08);
+  border: 1px solid rgba(255, 77, 109, 0.22);
 }
 
 .status-message--success {
@@ -65,14 +65,14 @@ const ariaLive = computed(() =>
 }
 
 .status-message--hint {
-  color: var(--text);
-  background: var(--social-bg);
-  border: 1px solid var(--border);
+  color: #7c86a3;
+  background: #faf7ff;
+  border: 1px solid #e4defa;
 }
 
 .status-message--loading {
   margin-top: 0;
-  color: var(--text);
+  color: #6d3df2;
   background: transparent;
   border: none;
   padding: 0;
@@ -81,7 +81,7 @@ const ariaLive = computed(() =>
 @media (max-width: 480px) {
   .status-message {
     font-size: 13px;
-    padding: 9px 10px;
+    padding: 9px 12px;
     margin-top: 6px;
   }
 

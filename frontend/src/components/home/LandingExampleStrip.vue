@@ -10,7 +10,6 @@ import LandingStaticImage from './LandingStaticImage.vue'
         <h2 id="landing-strip-title" class="landing-strip__title">
           다양한 이모티콘 예시
         </h2>
-        <span class="landing-strip__more" aria-hidden="true">더 보기 &gt;</span>
       </header>
 
       <div class="landing-strip__scroll-wrap">

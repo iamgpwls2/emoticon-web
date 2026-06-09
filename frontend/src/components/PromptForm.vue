@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import DropdownSelect from './DropdownSelect.vue'
 import ErrorMessage from './ErrorMessage.vue'
 import {
   EMOTICON_TEXT_MAX_LENGTH,
@@ -13,6 +14,20 @@ const EMOTION_OPTIONS = [
   '놀람',
   '부끄러움',
   '신남',
+  '사랑',
+  '짜증',
+  '당황',
+  '졸림',
+  '멋짐',
+  '감동',
+  '설렘',
+  '걱정',
+  '응원',
+  '감사',
+  '미안',
+  '자신감',
+  '피곤',
+  '흥분',
 ]
 
 const MOTION_OPTIONS = [
@@ -22,6 +37,20 @@ const MOTION_OPTIONS = [
   '박수',
   '하트 보내기',
   '고개 숙이기',
+  '윙크',
+  '엄지 척',
+  '춤추기',
+  '누워있기',
+  '달리기',
+  '안아주기',
+  '셀카 포즈',
+  '화이팅',
+  '인사',
+  '고개 돌리기',
+  '손가락 하트',
+  '축하',
+  '빠직거리기',
+  '빙글빙글',
 ]
 
 const emit = defineEmits(['update:form', 'interaction'])
@@ -66,16 +95,8 @@ function markTouched(field) {
   }
 }
 
-function handleEmotionBlur() {
-  markTouched('emotion')
-}
-
 function handleEmotionChange() {
   markTouched('emotion')
-}
-
-function handleMotionBlur() {
-  markTouched('motion')
 }
 
 function handleMotionChange() {
@@ -98,37 +119,29 @@ watch([emotion, motion, text], emitForm, { immediate: true })
   <form class="prompt-form" novalidate @submit.prevent>
     <div class="prompt-form__field">
       <label for="prompt-emotion">감정</label>
-      <select
+      <DropdownSelect
         id="prompt-emotion"
         v-model="emotion"
-        class="prompt-form__control"
-        :aria-invalid="Boolean(fieldErrors.emotion)"
-        @blur="handleEmotionBlur"
+        :options="EMOTION_OPTIONS"
+        placeholder="감정을 선택해 주세요"
+        :invalid="Boolean(fieldErrors.emotion)"
         @change="handleEmotionChange"
-      >
-        <option value="" disabled>감정을 선택해 주세요</option>
-        <option v-for="option in EMOTION_OPTIONS" :key="option" :value="option">
-          {{ option }}
-        </option>
-      </select>
+        @close="markTouched('emotion')"
+      />
       <ErrorMessage :message="fieldErrors.emotion" />
     </div>
 
     <div class="prompt-form__field">
       <label for="prompt-motion">모션</label>
-      <select
+      <DropdownSelect
         id="prompt-motion"
         v-model="motion"
-        class="prompt-form__control"
-        :aria-invalid="Boolean(fieldErrors.motion)"
-        @blur="handleMotionBlur"
+        :options="MOTION_OPTIONS"
+        placeholder="모션을 선택해 주세요"
+        :invalid="Boolean(fieldErrors.motion)"
         @change="handleMotionChange"
-      >
-        <option value="" disabled>모션을 선택해 주세요</option>
-        <option v-for="option in MOTION_OPTIONS" :key="option" :value="option">
-          {{ option }}
-        </option>
-      </select>
+        @close="markTouched('motion')"
+      />
       <ErrorMessage :message="fieldErrors.motion" />
     </div>
 
@@ -145,7 +158,7 @@ watch([emotion, motion, text], emitForm, { immediate: true })
         type="text"
         class="prompt-form__control"
         :maxlength="EMOTICON_TEXT_MAX_LENGTH"
-        placeholder="이모티콘에 넣을 텍스트"
+        placeholder="이모티콘에 넣을 텍스트 (선택)"
         :aria-invalid="Boolean(fieldErrors.text)"
         @blur="handleTextBlur"
         @input="handleTextInput"
@@ -159,24 +172,22 @@ watch([emotion, motion, text], emitForm, { immediate: true })
 .prompt-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
   text-align: left;
 }
 
 .prompt-form__field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
 }
 
 .prompt-form__field label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-h);
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
 }
 
 .prompt-form__label-row {
@@ -189,49 +200,54 @@ watch([emotion, motion, text], emitForm, { immediate: true })
 
 .prompt-form__counter {
   font-size: 13px;
-  color: var(--text);
+  color: #7c86a3;
   flex-shrink: 0;
 }
 
 .prompt-form__control {
   width: 100%;
   max-width: 100%;
-  min-height: 44px;
+  min-height: 56px;
   box-sizing: border-box;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text-h);
+  padding: 0 16px;
+  border: 1px solid #ddd2ff;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #111827;
   font: inherit;
   font-size: 16px;
   line-height: 1.4;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.prompt-form__control::placeholder {
+  color: #7c86a3;
 }
 
 .prompt-form__control:focus-visible {
   outline: none;
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-bg);
+  border-color: #6d3df2;
+  box-shadow: 0 0 0 3px rgba(109, 61, 242, 0.12);
 }
 
 .prompt-form__control[aria-invalid='true'] {
-  border-color: rgba(220, 38, 38, 0.5);
+  border-color: rgba(255, 77, 109, 0.55);
 }
 
-select.prompt-form__control {
-  cursor: pointer;
-  appearance: auto;
+.prompt-form__control[aria-invalid='true']:focus-visible {
+  box-shadow: 0 0 0 3px rgba(255, 77, 109, 0.12);
 }
 
 @media (max-width: 480px) {
   .prompt-form {
     gap: 18px;
-    max-width: 100%;
   }
 
   .prompt-form__control {
-    padding: 10px 12px;
+    min-height: 52px;
+    padding: 0 14px;
   }
 
   .prompt-form__label-row {
