@@ -172,3 +172,36 @@ export async function deleteGeneration(id) {
 
   return { success: body.success === true };
 }
+
+/**
+ * backend PATCH /api/generations/:id/gallery 로 갤러리 저장을 확정합니다.
+ * @param {string} id
+ * @returns {Promise<{ id: string, savedToGallery: boolean }>}
+ */
+export async function saveGenerationToGallery(id) {
+  if (!isNonEmptyString(id)) {
+    throw new Error('저장할 이모티콘 id가 필요합니다.');
+  }
+
+  const accessToken = await getAccessToken(
+    '갤러리에 저장하려면 로그인이 필요합니다.'
+  );
+
+  const response = await fetch(`${API_BASE_URL}/api/generations/${id}/gallery`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const body = await readApiResponse(
+    response,
+    '갤러리 저장에 실패했습니다. 다시 시도해 주세요.'
+  );
+
+  return {
+    id: body.id,
+    savedToGallery: body.savedToGallery === true,
+  };
+}

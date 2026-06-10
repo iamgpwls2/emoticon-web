@@ -19,6 +19,12 @@ function createNotFoundError(message) {
   return error;
 }
 
+function createNotSavableError(message) {
+  const error = new Error(message);
+  error.isGenerationNotSavableError = true;
+  return error;
+}
+
 function assertNonEmptyString(value, fieldName) {
   if (typeof value !== 'string' || !value.trim()) {
     throw createServiceError(`${fieldName} is required.`);
@@ -40,12 +46,13 @@ function handleSupabaseError(action, error) {
 }
 
 const MY_GENERATIONS_LIST_COLUMNS =
-  'id, status, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
+  'id, status, saved_to_gallery, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
 
 function mapGenerationListItem(row) {
   return {
     id: row.id,
     status: row.status,
+    savedToGallery: row.saved_to_gallery === true,
     originalImageUrl: row.original_image_url,
     generatedImageUrl: row.generated_image_url,
     emotion: row.emotion,
@@ -75,6 +82,7 @@ export async function listMyGenerations({ userId, page, limit }) {
     .from(EMOTICON_GENERATIONS_TABLE)
     .select(MY_GENERATIONS_LIST_COLUMNS, { count: 'exact' })
     .eq('user_id', resolvedUserId)
+    .eq('saved_to_gallery', true)
     .order('created_at', { ascending: false })
     .range(from, to);
 
@@ -257,4 +265,63 @@ export async function deleteMyGeneration({ generationId, userId }) {
   if (deleteError) {
     handleSupabaseError('delete', deleteError);
   }
+}
+
+/**
+ * 생성 완료된 이모티콘을 갤러리에 저장합니다.
+ *
+ * @param {{ generationId: string, userId: string }} params
+ * @returns {Promise<{ id: string, savedToGallery: boolean }>}
+ */
+export async function saveGenerationToGallery({ generationId, userId }) {
+  const resolvedGenerationId = assertNonEmptyString(generationId, 'generationId');
+  const resolvedUserId = assertNonEmptyString(userId, 'userId');
+
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .select('id, status, saved_to_gallery')
+    .eq('id', resolvedGenerationId)
+    .eq('user_id', resolvedUserId)
+    .maybeSingle();
+
+  if (fetchError) {
+    handleSupabaseError('fetch for gallery save', fetchError);
+  }
+
+  if (!existing) {
+    throw createNotFoundError('Generation not found.');
+  }
+
+  if (existing.status !== STATUS_COMPLETED) {
+    throw createNotSavableError(
+      'Only completed generations can be saved to gallery.'
+    );
+  }
+
+  if (existing.saved_to_gallery === true) {
+    return {
+      id: existing.id,
+      savedToGallery: true,
+    };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .update({
+      saved_to_gallery: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', resolvedGenerationId)
+    .eq('user_id', resolvedUserId)
+    .select('id, saved_to_gallery')
+    .single();
+
+  if (error) {
+    handleSupabaseError('save to gallery', error);
+  }
+
+  return {
+    id: data.id,
+    savedToGallery: data.saved_to_gallery === true,
+  };
 }

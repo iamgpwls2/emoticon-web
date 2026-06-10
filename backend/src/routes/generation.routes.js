@@ -3,6 +3,7 @@ import {
   createGeneration as createGenerationController,
   deleteGeneration as deleteGenerationController,
   getMyGenerations as getMyGenerationsController,
+  patchGenerationGallery as patchGenerationGalleryController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
 import {
@@ -32,6 +33,16 @@ router.post(
   asyncHandler(requireAuth),
   validateCreateGeneration,
   asyncHandler(createGenerationController)
+);
+
+/**
+ * PATCH /api/generations/:id/gallery
+ */
+router.patch(
+  '/:id/gallery',
+  asyncHandler(requireAuth),
+  validateGenerationIdParam,
+  asyncHandler(patchGenerationGalleryController)
 );
 
 /**

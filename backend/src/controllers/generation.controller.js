@@ -4,6 +4,7 @@ import {
   listMyGenerations,
   markGenerationCompleted,
   markGenerationFailed,
+  saveGenerationToGallery,
 } from '../services/generation.service.js';
 import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
 import { applyCharacterPreservationGuards } from '../services/llm.service.js';
@@ -180,6 +181,39 @@ export async function createGeneration(req, res) {
 
     throw HttpError.serverError(
       '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+    );
+  }
+}
+
+/**
+ * PATCH /api/generations/:id/gallery
+ * 생성 완료된 이모티콘을 갤러리에 저장합니다.
+ */
+export async function patchGenerationGallery(req, res) {
+  const userId = req.user.id;
+  const { id } = req.params;
+
+  try {
+    const result = await saveGenerationToGallery({ generationId: id, userId });
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error(
+      `patchGenerationGallery failed (user=${userId}, generation=${id}):`,
+      error.message
+    );
+
+    if (error.isGenerationNotFoundError) {
+      throw HttpError.notFound('이모티콘을 찾을 수 없습니다.');
+    }
+
+    if (error.isGenerationNotSavableError) {
+      throw HttpError.validation(
+        '생성이 완료된 이모티콘만 갤러리에 저장할 수 있습니다.'
+      );
+    }
+
+    throw HttpError.serverError(
+      '갤러리 저장에 실패했습니다. 다시 시도해 주세요.'
     );
   }
 }
