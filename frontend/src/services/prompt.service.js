@@ -1,8 +1,6 @@
 import { supabase } from '../lib/supabase.js';
+import API_BASE_URL from '@/lib/apiClient.js';
 import { readApiResponse } from '../utils/apiError.js';
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:4000';
 
 const REFINE_FAILED_MESSAGE =
   '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.';

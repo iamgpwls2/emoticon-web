@@ -1,8 +1,6 @@
 import { supabase } from '../lib/supabase.js';
+import API_BASE_URL from '@/lib/apiClient.js';
 import { readApiResponse } from '../utils/apiError.js';
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:4000';
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
