@@ -40,7 +40,11 @@ const steps = [
             class="landing-how__card"
             :style="{ animationDelay: `${index * 0.1}s` }"
           >
-            <span class="landing-how__step-num">{{ item.step }}</span>
+            <div class="landing-how__content">
+              <span class="landing-how__step-num">{{ item.step }}</span>
+              <h3 class="landing-how__card-title">{{ item.title }}</h3>
+              <p class="landing-how__card-text">{{ item.description }}</p>
+            </div>
 
             <div class="landing-how__icon" aria-hidden="true">
               <svg
@@ -99,9 +103,6 @@ const steps = [
                 />
               </svg>
             </div>
-
-            <h3 class="landing-how__card-title">{{ item.title }}</h3>
-            <p class="landing-how__card-text">{{ item.description }}</p>
           </article>
 
           <span

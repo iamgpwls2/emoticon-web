@@ -34,7 +34,7 @@ const MAIN_GRADIENT =
 
       <div class="flow-arrow" aria-hidden="true">
         <svg
-          viewBox="0 0 140 300"
+          viewBox="0 0 152 330"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -52,29 +52,21 @@ const MAIN_GRADIENT =
           </defs>
 
           <path
-            d="M0 150 H36"
+            d="M0 165 H39"
             stroke="#b8a6f8"
             stroke-width="2.5"
             stroke-dasharray="6 6"
             stroke-linecap="round"
           />
           <path
-            d="M36 46 V254"
+            d="M39 51 V279"
             stroke="#b8a6f8"
             stroke-width="2.5"
             stroke-dasharray="6 6"
             stroke-linecap="round"
           />
           <path
-            d="M36 46 H124"
-            stroke="#b8a6f8"
-            stroke-width="2.5"
-            stroke-dasharray="6 6"
-            stroke-linecap="round"
-            marker-end="url(#hero-preview-arrowhead)"
-          />
-          <path
-            d="M36 150 H124"
+            d="M39 51 H134"
             stroke="#b8a6f8"
             stroke-width="2.5"
             stroke-dasharray="6 6"
@@ -82,7 +74,15 @@ const MAIN_GRADIENT =
             marker-end="url(#hero-preview-arrowhead)"
           />
           <path
-            d="M36 254 H124"
+            d="M39 165 H134"
+            stroke="#b8a6f8"
+            stroke-width="2.5"
+            stroke-dasharray="6 6"
+            stroke-linecap="round"
+            marker-end="url(#hero-preview-arrowhead)"
+          />
+          <path
+            d="M39 279 H134"
             stroke="#b8a6f8"
             stroke-width="2.5"
             stroke-dasharray="6 6"

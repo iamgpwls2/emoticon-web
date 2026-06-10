@@ -117,32 +117,34 @@ watch([emotion, motion, text], emitForm, { immediate: true })
 
 <template>
   <form class="prompt-form" novalidate @submit.prevent>
-    <div class="prompt-form__field">
-      <label for="prompt-emotion">감정</label>
-      <DropdownSelect
-        id="prompt-emotion"
-        v-model="emotion"
-        :options="EMOTION_OPTIONS"
-        placeholder="감정을 선택해 주세요"
-        :invalid="Boolean(fieldErrors.emotion)"
-        @change="handleEmotionChange"
-        @close="markTouched('emotion')"
-      />
-      <ErrorMessage :message="fieldErrors.emotion" />
-    </div>
+    <div class="prompt-form__setting-row">
+      <div class="prompt-form__field">
+        <label for="prompt-emotion">감정</label>
+        <DropdownSelect
+          id="prompt-emotion"
+          v-model="emotion"
+          :options="EMOTION_OPTIONS"
+          placeholder="감정을 선택해 주세요"
+          :invalid="Boolean(fieldErrors.emotion)"
+          @change="handleEmotionChange"
+          @close="markTouched('emotion')"
+        />
+        <ErrorMessage :message="fieldErrors.emotion" />
+      </div>
 
-    <div class="prompt-form__field">
-      <label for="prompt-motion">모션</label>
-      <DropdownSelect
-        id="prompt-motion"
-        v-model="motion"
-        :options="MOTION_OPTIONS"
-        placeholder="모션을 선택해 주세요"
-        :invalid="Boolean(fieldErrors.motion)"
-        @change="handleMotionChange"
-        @close="markTouched('motion')"
-      />
-      <ErrorMessage :message="fieldErrors.motion" />
+      <div class="prompt-form__field">
+        <label for="prompt-motion">모션</label>
+        <DropdownSelect
+          id="prompt-motion"
+          v-model="motion"
+          :options="MOTION_OPTIONS"
+          placeholder="모션을 선택해 주세요"
+          :invalid="Boolean(fieldErrors.motion)"
+          @change="handleMotionChange"
+          @close="markTouched('motion')"
+        />
+        <ErrorMessage :message="fieldErrors.motion" />
+      </div>
     </div>
 
     <div class="prompt-form__field">
@@ -175,6 +177,13 @@ watch([emotion, motion, text], emitForm, { immediate: true })
   gap: 22px;
   width: 100%;
   text-align: left;
+}
+
+.prompt-form__setting-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  width: 100%;
 }
 
 .prompt-form__field {
@@ -238,6 +247,12 @@ watch([emotion, motion, text], emitForm, { immediate: true })
 
 .prompt-form__control[aria-invalid='true']:focus-visible {
   box-shadow: 0 0 0 3px rgba(255, 77, 109, 0.12);
+}
+
+@media (max-width: 640px) {
+  .prompt-form__setting-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {

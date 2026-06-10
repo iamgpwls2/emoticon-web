@@ -8,7 +8,7 @@ const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 
-const emit = defineEmits(['uploaded'])
+const emit = defineEmits(['uploaded', 'file-selected'])
 
 const fileInputRef = ref(null)
 const previewUrl = ref('')
@@ -77,6 +77,7 @@ function handleFileChange(event) {
   revokePreview()
   selectedFile.value = file
   previewUrl.value = URL.createObjectURL(file)
+  emit('file-selected')
 }
 
 function openFilePicker() {
@@ -245,8 +246,9 @@ onUnmounted(() => {
 
 .image-uploader__preview-wrap {
   width: 100%;
-  max-width: 360px;
-  margin-inline: auto;
+  max-width: 260px;
+  max-height: 260px;
+  margin: 20px auto;
   border: 1px solid #ddd2ff;
   border-radius: 12px;
   overflow: hidden;
@@ -256,7 +258,8 @@ onUnmounted(() => {
 .image-uploader__preview {
   display: block;
   width: 100%;
-  max-height: min(60vh, 360px);
+  height: 100%;
+  max-height: 260px;
   object-fit: contain;
 }
 

@@ -21,6 +21,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  uploadRequired: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['update:storyPrompt', 'update:finalPrompt'])
@@ -44,7 +48,9 @@ const canRefine = computed(() =>
 
 const hasReferenceImage = computed(() => Boolean(props.originalImageUrl?.trim()))
 
-const isButtonDisabled = computed(() => !canRefine.value || loading.value)
+const isButtonDisabled = computed(
+  () => !canRefine.value || loading.value || props.uploadRequired
+)
 
 const refineButtonLabel = computed(() =>
   loading.value ? '구체화 중...' : '프롬프트 구체화하기'
@@ -102,7 +108,12 @@ async function handleRefine() {
     <ErrorMessage :message="errorMessage" variant="error" />
     <ErrorMessage :message="successMessage" variant="success" />
 
-    <p v-if="canRefine && !hasReferenceImage" class="prompt-refiner__hint">
+    <p v-if="uploadRequired" class="prompt-refiner__hint prompt-refiner__hint--warning">
+      이미지를 변경했습니다. 새 이미지를 먼저 업로드해야 프롬프트 구체화와 이미지
+      생성이 가능합니다.
+    </p>
+
+    <p v-else-if="canRefine && !hasReferenceImage" class="prompt-refiner__hint">
       원본 캐릭터 보존 품질을 위해 이미지 업로드 후 구체화하는 것을 권장합니다.
     </p>
 
@@ -187,6 +198,12 @@ async function handleRefine() {
   border-radius: 10px;
 }
 
+.prompt-refiner__hint--warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
 .prompt-refiner__field {
   display: flex;
   flex-direction: column;
@@ -216,7 +233,9 @@ async function handleRefine() {
 .prompt-refiner__control {
   width: 100%;
   max-width: 100%;
-  min-height: 140px;
+  min-height: 120px;
+  max-height: 180px;
+  overflow-y: auto;
   box-sizing: border-box;
   padding: 14px 16px;
   border: 1px solid #ddd2ff;
