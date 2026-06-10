@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase.js';
 import { readApiResponse } from '../utils/apiError.js';
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3000';
+  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:4000';
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -32,7 +32,7 @@ async function getAccessToken(unauthenticatedMessage) {
  *   originalImageUrl?: string,
  *   emotion: string,
  *   motion: string,
- *   inputText: string,
+ *   inputText?: string,
  *   storyPrompt: string,
  *   finalPrompt: string,
  * }} payload
@@ -58,10 +58,14 @@ export async function createGeneration({
   const payload = {
     emotion,
     motion,
-    inputText,
     storyPrompt,
     finalPrompt,
   };
+  const trimmedInputText =
+    typeof inputText === 'string' ? inputText.trim() : '';
+  if (trimmedInputText) {
+    payload.inputText = trimmedInputText;
+  }
   const trimmedOriginalImageUrl = originalImageUrl?.trim();
   if (trimmedOriginalImageUrl) {
     payload.originalImageUrl = trimmedOriginalImageUrl;

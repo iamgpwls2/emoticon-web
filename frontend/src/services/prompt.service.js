@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase.js';
 import { readApiResponse } from '../utils/apiError.js';
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3000';
+  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:4000';
 
 const REFINE_FAILED_MESSAGE =
   '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.';
@@ -27,7 +27,7 @@ async function getAccessToken() {
 
 /**
  * 사용자 입력을 backend POST /api/prompts/refine 으로 보내 storyPrompt / finalPrompt를 받습니다.
- * @param {{ emotion: string, motion: string, inputText: string, originalImageUrl?: string }} payload
+ * @param {{ emotion: string, motion: string, inputText?: string, originalImageUrl?: string }} payload
  * @returns {Promise<{ storyPrompt: string, finalPrompt: string }>}
  */
 export async function refinePrompt({
@@ -41,8 +41,12 @@ export async function refinePrompt({
   const payload = {
     emotion,
     motion,
-    inputText,
   };
+  const trimmedInputText =
+    typeof inputText === 'string' ? inputText.trim() : '';
+  if (trimmedInputText) {
+    payload.inputText = trimmedInputText;
+  }
   const trimmedOriginalImageUrl = originalImageUrl?.trim();
   if (trimmedOriginalImageUrl) {
     payload.originalImageUrl = trimmedOriginalImageUrl;
