@@ -37,10 +37,6 @@ export function useFavorites() {
 
   const favoriteCount = computed(() => favoriteIds.value.length)
 
-  function isFavorite(id) {
-    return favoriteIds.value.includes(id)
-  }
-
   function toggleFavorite(id) {
     if (!id?.trim()) return
 
@@ -61,7 +57,6 @@ export function useFavorites() {
   return {
     favoriteIds,
     favoriteCount,
-    isFavorite,
     toggleFavorite,
     filterFavoriteItems,
   }
