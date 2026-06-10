@@ -271,9 +271,80 @@ export async function markGenerationFailed({
   return data;
 }
 
+const BULK_DELETE_MAX = 100;
+
 /**
- * 본인 소유 emoticon_generations 기록을 삭제합니다.
+ * 본인 소유 emoticon_generations 기록을 여러 건 삭제합니다.
  * generated-emoticons Storage 이미지만 삭제하고 original upload image는 유지합니다.
+ *
+ * @param {{ generationIds: string[], userId: string }} params
+ * @returns {Promise<{ deletedCount: number, deletedIds: string[] }>}
+ */
+export async function deleteMyGenerations({ generationIds, userId }) {
+  const resolvedUserId = assertNonEmptyString(userId, 'userId');
+
+  if (!Array.isArray(generationIds) || generationIds.length === 0) {
+    throw createServiceError('generationIds is required.');
+  }
+
+  const uniqueIds = [
+    ...new Set(
+      generationIds
+        .filter((id) => typeof id === 'string' && id.trim())
+        .map((id) => id.trim())
+    ),
+  ];
+
+  if (uniqueIds.length === 0) {
+    throw createServiceError('generationIds is required.');
+  }
+
+  if (uniqueIds.length > BULK_DELETE_MAX) {
+    throw createServiceError(
+      `Cannot delete more than ${BULK_DELETE_MAX} generations at once.`
+    );
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .select('id, generated_image_url')
+    .eq('user_id', resolvedUserId)
+    .in('id', uniqueIds);
+
+  if (error) {
+    handleSupabaseError('fetch for bulk delete', error);
+  }
+
+  const rows = data ?? [];
+
+  if (rows.length === 0) {
+    throw createNotFoundError('Generation not found.');
+  }
+
+  for (const row of rows) {
+    await deleteGeneratedEmoticonByUrl(row.generated_image_url);
+  }
+
+  const idsToDelete = rows.map((row) => row.id);
+
+  const { error: deleteError } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .delete()
+    .eq('user_id', resolvedUserId)
+    .in('id', idsToDelete);
+
+  if (deleteError) {
+    handleSupabaseError('bulk delete', deleteError);
+  }
+
+  return {
+    deletedCount: idsToDelete.length,
+    deletedIds: idsToDelete,
+  };
+}
+
+/**
+ * 본인 소유 emoticon_generations 기록 1건을 삭제합니다.
  *
  * @param {{ generationId: string, userId: string }} params
  * @returns {Promise<void>}
@@ -282,32 +353,10 @@ export async function deleteMyGeneration({ generationId, userId }) {
   const resolvedGenerationId = assertNonEmptyString(generationId, 'generationId');
   const resolvedUserId = assertNonEmptyString(userId, 'userId');
 
-  const { data, error } = await supabaseAdmin
-    .from(EMOTICON_GENERATIONS_TABLE)
-    .select('id, generated_image_url')
-    .eq('id', resolvedGenerationId)
-    .eq('user_id', resolvedUserId)
-    .maybeSingle();
-
-  if (error) {
-    handleSupabaseError('fetch for delete', error);
-  }
-
-  if (!data) {
-    throw createNotFoundError('Generation not found.');
-  }
-
-  await deleteGeneratedEmoticonByUrl(data.generated_image_url);
-
-  const { error: deleteError } = await supabaseAdmin
-    .from(EMOTICON_GENERATIONS_TABLE)
-    .delete()
-    .eq('id', resolvedGenerationId)
-    .eq('user_id', resolvedUserId);
-
-  if (deleteError) {
-    handleSupabaseError('delete', deleteError);
-  }
+  await deleteMyGenerations({
+    generationIds: [resolvedGenerationId],
+    userId: resolvedUserId,
+  });
 }
 
 /**

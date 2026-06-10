@@ -1,40 +1,17 @@
 import {
-  createGeneratingRecord,
   deleteMyGeneration,
+  deleteMyGenerations,
   listMyGenerations,
-  markGenerationCompleted,
-  markGenerationFailed,
   moveGenerationToCollection,
   saveGenerationToGallery,
 } from '../services/generation.service.js';
-import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
-import { applyCharacterPreservationGuards } from '../services/llm.service.js';
-import {
-  uploadGeneratedEmoticon,
-  validateUserUploadOwnership,
-} from '../services/storage.service.js';
+import { runGenerationPipeline } from '../services/generationOrchestration.service.js';
 import { HttpError } from '../utils/httpError.js';
+import { rethrowControllerError } from '../utils/controllerError.js';
+import { parseListPagination } from '../utils/pagination.js';
 
-const DEFAULT_LIST_LIMIT = 12;
-const MAX_LIST_LIMIT = 50;
-
-function parsePositiveInt(value, fallback) {
-  const parsed = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return fallback;
-  }
-  return parsed;
-}
-
-function toSafeErrorMessage(error) {
-  if (error.isImageGenerationServiceError) {
-    return 'Image generation request failed.';
-  }
-  if (error.isStorageServiceError) {
-    return 'Storage operation failed.';
-  }
-  return 'Generation pipeline failed.';
-}
+const GENERATION_FAILURE_MESSAGE =
+  '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.';
 
 /**
  * GET /api/generations/me
@@ -42,11 +19,7 @@ function toSafeErrorMessage(error) {
  */
 export async function getMyGenerations(req, res) {
   const userId = req.user.id;
-  const page = parsePositiveInt(req.query.page, 1);
-  const limit = Math.min(
-    MAX_LIST_LIMIT,
-    parsePositiveInt(req.query.limit, DEFAULT_LIST_LIMIT)
-  );
+  const { page, limit } = parseListPagination(req.query);
   const collectionId =
     typeof req.query.collectionId === 'string' && req.query.collectionId.trim()
       ? req.query.collectionId.trim()
@@ -68,10 +41,10 @@ export async function getMyGenerations(req, res) {
       hasMore: page * limit < total,
     });
   } catch (error) {
-    console.error(`getMyGenerations failed (user=${userId}):`, error.message);
-    throw HttpError.serverError(
-      '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.'
-    );
+    rethrowControllerError(error, {
+      logPrefix: `getMyGenerations failed (user=${userId}):`,
+      fallbackMessage: '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.',
+    });
   }
 }
 
@@ -81,124 +54,21 @@ export async function getMyGenerations(req, res) {
  */
 export async function createGeneration(req, res) {
   const userId = req.user.id;
-  const {
-    originalImageUrl,
-    emotion,
-    motion,
-    inputText,
-    storyPrompt,
-    finalPrompt,
-    collectionId,
-  } = req.body;
-
-  const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
-
-  validateUserUploadOwnership({
-    originalImageUrl: trimmedOriginalImageUrl,
-    userId,
-  });
-
-  const hasReferenceImage = Boolean(trimmedOriginalImageUrl);
-  const trimmedInputText =
-    typeof inputText === 'string' ? inputText.trim() : '';
-  const trimmedFinalPrompt = finalPrompt?.trim();
-  const { finalPrompt: imageGenerationPrompt } = applyCharacterPreservationGuards(
-    {
-      storyPrompt: typeof storyPrompt === 'string' ? storyPrompt.trim() : '',
-      finalPrompt: trimmedFinalPrompt,
-    },
-    {
-      hasReferenceImage,
-      inputText: trimmedInputText,
-    }
-  );
-
-  console.info('createGeneration request', {
-    userId,
-    hasReferenceImage,
-    hasInputText: Boolean(trimmedInputText),
-  });
-
-  let record;
 
   try {
-    record = await createGeneratingRecord({
+    const result = await runGenerationPipeline({
       userId,
-      originalImageUrl: trimmedOriginalImageUrl,
-      emotion,
-      motion,
-      inputText,
-      storyPrompt,
-      finalPrompt: imageGenerationPrompt,
-      collectionId,
+      ...req.body,
     });
+
+    return res.status(201).json(result);
   } catch (error) {
-    console.error(`createGeneration failed (user=${userId}):`, error.message);
-
-    if (error.isCollectionNotFoundError) {
-      throw HttpError.notFound('폴더를 찾을 수 없습니다.');
-    }
-
-    throw HttpError.serverError(
-      '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
-    );
-  }
-
-  try {
-    const { imageBuffer, mimeType } = await generateImageFromPrompt({
-      finalPrompt: imageGenerationPrompt,
-      originalImageUrl: trimmedOriginalImageUrl,
-      userId,
+    rethrowControllerError(error, {
+      logPrefix: `createGeneration failed (user=${userId}):`,
+      fallbackMessage: GENERATION_FAILURE_MESSAGE,
+      storageMessage: GENERATION_FAILURE_MESSAGE,
+      externalApiMessage: GENERATION_FAILURE_MESSAGE,
     });
-    const { generatedImageUrl } = await uploadGeneratedEmoticon(
-      userId,
-      record.id,
-      imageBuffer,
-      mimeType
-    );
-    const updated = await markGenerationCompleted({
-      generationId: record.id,
-      userId,
-      generatedImageUrl,
-    });
-
-    return res.status(201).json({
-      id: updated.id,
-      generatedImageUrl: updated.generated_image_url,
-      status: updated.status,
-    });
-  } catch (error) {
-    console.error(
-      `createGeneration failed (user=${userId}, generation=${record.id}):`,
-      error.message
-    );
-
-    try {
-      await markGenerationFailed({
-        generationId: record.id,
-        userId,
-        errorMessage: toSafeErrorMessage(error),
-      });
-    } catch (markError) {
-      console.error(
-        `markGenerationFailed failed (user=${userId}, generation=${record.id}):`,
-        markError.message
-      );
-    }
-
-    if (error.isImageGenerationServiceError) {
-      throw HttpError.externalApi(
-        '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
-      );
-    }
-
-    if (error.isStorageServiceError) {
-      throw HttpError.storage('이모티콘 생성에 실패했습니다. 다시 시도해 주세요.');
-    }
-
-    throw HttpError.serverError(
-      '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
-    );
   }
 }
 
@@ -219,22 +89,10 @@ export async function patchGenerationCollection(req, res) {
 
     return res.status(200).json(item);
   } catch (error) {
-    console.error(
-      `patchGenerationCollection failed (user=${userId}, generation=${id}):`,
-      error.message
-    );
-
-    if (error.isGenerationNotFoundError) {
-      throw HttpError.notFound('이모티콘을 찾을 수 없습니다.');
-    }
-
-    if (error.isCollectionNotFoundError) {
-      throw HttpError.notFound('폴더를 찾을 수 없습니다.');
-    }
-
-    throw HttpError.serverError(
-      '폴더 이동에 실패했습니다. 다시 시도해 주세요.'
-    );
+    rethrowControllerError(error, {
+      logPrefix: `patchGenerationCollection failed (user=${userId}, generation=${id}):`,
+      fallbackMessage: '폴더 이동에 실패했습니다. 다시 시도해 주세요.',
+    });
   }
 }
 
@@ -250,24 +108,38 @@ export async function patchGenerationGallery(req, res) {
     const result = await saveGenerationToGallery({ generationId: id, userId });
     return res.status(200).json(result);
   } catch (error) {
-    console.error(
-      `patchGenerationGallery failed (user=${userId}, generation=${id}):`,
-      error.message
-    );
+    rethrowControllerError(error, {
+      logPrefix: `patchGenerationGallery failed (user=${userId}, generation=${id}):`,
+      fallbackMessage: '갤러리 저장에 실패했습니다. 다시 시도해 주세요.',
+    });
+  }
+}
 
-    if (error.isGenerationNotFoundError) {
-      throw HttpError.notFound('이모티콘을 찾을 수 없습니다.');
-    }
+/**
+ * POST /api/generations/bulk-delete
+ * req.user.id와 일치하는 generation만 여러 건 삭제합니다.
+ */
+export async function deleteGenerations(req, res) {
+  const userId = req.user.id;
+  const { ids } = req.body ?? {};
 
-    if (error.isGenerationNotSavableError) {
-      throw HttpError.validation(
-        '생성이 완료된 이모티콘만 갤러리에 저장할 수 있습니다.'
-      );
-    }
+  try {
+    const { deletedCount, deletedIds } = await deleteMyGenerations({
+      generationIds: ids,
+      userId,
+    });
 
-    throw HttpError.serverError(
-      '갤러리 저장에 실패했습니다. 다시 시도해 주세요.'
-    );
+    return res.status(200).json({
+      success: true,
+      deletedCount,
+      deletedIds,
+    });
+  } catch (error) {
+    rethrowControllerError(error, {
+      logPrefix: `deleteGenerations failed (user=${userId}, count=${ids?.length ?? 0}):`,
+      fallbackMessage: '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.',
+      validationField: 'ids',
+    });
   }
 }
 
@@ -283,17 +155,9 @@ export async function deleteGeneration(req, res) {
     await deleteMyGeneration({ generationId: id, userId });
     return res.status(200).json({ success: true });
   } catch (error) {
-    console.error(
-      `deleteGeneration failed (user=${userId}, generation=${id}):`,
-      error.message
-    );
-
-    if (error.isGenerationNotFoundError) {
-      throw HttpError.notFound('이모티콘을 찾을 수 없습니다.');
-    }
-
-    throw HttpError.serverError(
-      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
-    );
+    rethrowControllerError(error, {
+      logPrefix: `deleteGeneration failed (user=${userId}, generation=${id}):`,
+      fallbackMessage: '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.',
+    });
   }
 }

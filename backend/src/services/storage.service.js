@@ -1,5 +1,4 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import { HttpError } from '../utils/httpError.js';
 import {
   getUploadBucketName,
   isValidHttpOrHttpsUrl,
@@ -18,6 +17,19 @@ const DEFAULT_SIGNED_URL_EXPIRES_IN_SECONDS = 3600;
 function createServiceError(message) {
   const error = new Error(message);
   error.isStorageServiceError = true;
+  return error;
+}
+
+function createUploadOwnershipValidationError(message, details) {
+  const error = new Error(message);
+  error.isUploadOwnershipValidationError = true;
+  error.details = details;
+  return error;
+}
+
+function createUploadOwnershipForbiddenError(message) {
+  const error = new Error(message);
+  error.isUploadOwnershipForbiddenError = true;
   return error;
 }
 
@@ -76,7 +88,7 @@ export function extractStoragePathFromUrl(url, bucketName) {
  * 값이 없으면 통과합니다.
  *
  * @param {{ originalImageUrl?: string, userId: string }} params
- * @throws {import('../utils/httpError.js').HttpError}
+ * @throws {Error & { isUploadOwnershipValidationError?: boolean, isUploadOwnershipForbiddenError?: boolean }}
  */
 export function validateUserUploadOwnership({ originalImageUrl, userId }) {
   const trimmedValue =
@@ -93,40 +105,49 @@ export function validateUserUploadOwnership({ originalImageUrl, userId }) {
   if (isValidHttpOrHttpsUrl(trimmedValue)) {
     objectPath = extractStoragePathFromUrl(trimmedValue, uploadBucket);
     if (!objectPath) {
-      throw HttpError.validation(UPLOAD_OWNERSHIP_VALIDATION_MESSAGE, {
-        errors: [
-          {
-            field: 'originalImageUrl',
-            message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
-          },
-        ],
-      });
+      throw createUploadOwnershipValidationError(
+        UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+        {
+          errors: [
+            {
+              field: 'originalImageUrl',
+              message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+            },
+          ],
+        }
+      );
     }
   } else if (!trimmedValue.includes('://')) {
     objectPath = trimmedValue;
     if (!objectPath.includes('/')) {
-      throw HttpError.validation(UPLOAD_OWNERSHIP_VALIDATION_MESSAGE, {
+      throw createUploadOwnershipValidationError(
+        UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+        {
+          errors: [
+            {
+              field: 'originalImageUrl',
+              message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+            },
+          ],
+        }
+      );
+    }
+  } else {
+    throw createUploadOwnershipValidationError(
+      UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
+      {
         errors: [
           {
             field: 'originalImageUrl',
             message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
           },
         ],
-      });
-    }
-  } else {
-    throw HttpError.validation(UPLOAD_OWNERSHIP_VALIDATION_MESSAGE, {
-      errors: [
-        {
-          field: 'originalImageUrl',
-          message: UPLOAD_OWNERSHIP_VALIDATION_MESSAGE,
-        },
-      ],
-    });
+      }
+    );
   }
 
   if (!normalizedUserId || !objectPath.startsWith(`${normalizedUserId}/`)) {
-    throw HttpError.forbidden(UPLOAD_OWNERSHIP_FORBIDDEN_MESSAGE);
+    throw createUploadOwnershipForbiddenError(UPLOAD_OWNERSHIP_FORBIDDEN_MESSAGE);
   }
 }
 

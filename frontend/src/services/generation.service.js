@@ -174,6 +174,41 @@ export async function deleteGeneration(id) {
 }
 
 /**
+ * backend POST /api/generations/bulk-delete 로 로그인 사용자의 생성 기록을 여러 건 삭제합니다.
+ * @param {string[]} ids
+ * @returns {Promise<{ success: boolean, deletedCount: number, deletedIds: string[] }>}
+ */
+export async function deleteGenerations(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error('삭제할 이모티콘 id 목록이 필요합니다.');
+  }
+
+  const accessToken = await getAccessToken(
+    '이모티콘을 삭제하려면 로그인이 필요합니다.'
+  );
+
+  const response = await fetch(`${API_BASE_URL}/api/generations/bulk-delete`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ids }),
+  });
+
+  const body = await readApiResponse(
+    response,
+    '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+  );
+
+  return {
+    success: body.success === true,
+    deletedCount: body.deletedCount ?? 0,
+    deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
+  };
+}
+
+/**
  * backend PATCH /api/generations/:id/gallery 로 갤러리 저장을 확정합니다.
  * @param {string} id
  * @returns {Promise<{ id: string, savedToGallery: boolean }>}

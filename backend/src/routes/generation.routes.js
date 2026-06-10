@@ -2,12 +2,14 @@ import { Router } from 'express';
 import {
   createGeneration as createGenerationController,
   deleteGeneration as deleteGenerationController,
+  deleteGenerations as deleteGenerationsController,
   getMyGenerations as getMyGenerationsController,
   patchGenerationCollection as patchGenerationCollectionController,
   patchGenerationGallery as patchGenerationGalleryController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
 import {
+  validateBulkDeleteGenerations,
   validateCreateGeneration,
   validateGenerationIdParam,
   validateListMyGenerationsQuery,
@@ -37,6 +39,17 @@ router.post(
   asyncHandler(requireAuth),
   validateCreateGeneration,
   asyncHandler(createGenerationController)
+);
+
+/**
+ * POST /api/generations/bulk-delete
+ * 동적 라우트(/:id 등)보다 먼저 등록합니다.
+ */
+router.post(
+  '/bulk-delete',
+  asyncHandler(requireAuth),
+  validateBulkDeleteGenerations,
+  asyncHandler(deleteGenerationsController)
 );
 
 /**

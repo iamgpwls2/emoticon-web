@@ -161,6 +161,55 @@ export function validateListMyGenerationsQuery(req, res, next) {
   next();
 }
 
+const BULK_DELETE_MAX = 100;
+
+/**
+ * POST /api/generations/bulk-delete body 검증.
+ */
+export function validateBulkDeleteGenerations(req, res, next) {
+  const { ids } = req.body ?? {};
+  const errors = [];
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    errors.push({
+      field: 'ids',
+      message: 'ids는 1개 이상 필요합니다.',
+    });
+  } else {
+    if (ids.length > BULK_DELETE_MAX) {
+      errors.push({
+        field: 'ids',
+        message: `한 번에 최대 ${BULK_DELETE_MAX}개까지 삭제할 수 있습니다.`,
+      });
+    }
+
+    for (let index = 0; index < ids.length; index += 1) {
+      const id = ids[index];
+      if (typeof id !== 'string' || !UUID_PATTERN.test(id.trim())) {
+        errors.push({
+          field: 'ids',
+          message: `ids[${index}] 형식이 올바르지 않습니다.`,
+        });
+        break;
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return next(
+      HttpError.validation('입력값을 확인해 주세요.', { errors })
+    );
+  }
+
+  req.body.ids = [
+    ...new Set(
+      ids.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim())
+    ),
+  ];
+
+  next();
+}
+
 /**
  * DELETE /api/generations/:id path param 검증.
  */

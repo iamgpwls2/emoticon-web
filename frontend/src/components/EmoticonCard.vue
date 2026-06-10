@@ -327,10 +327,8 @@ function handleToggleFavorite(event) {
 }
 
 .emoticon-card--selected {
-  border-color: #6d3df2;
-  box-shadow:
-    0 0 0 3px rgba(109, 61, 242, 0.12),
-    0 14px 35px rgba(80, 60, 160, 0.1);
+  border: 1.5px solid #8b5cf6;
+  box-shadow: 0 18px 40px rgba(109, 61, 242, 0.16);
 }
 
 .emoticon-card--selected::after {

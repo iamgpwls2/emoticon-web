@@ -1,5 +1,5 @@
 import { refinePromptWithLLM } from '../services/llm.service.js';
-import { HttpError } from '../utils/httpError.js';
+import { rethrowControllerError } from '../utils/controllerError.js';
 
 /**
  * POST /api/prompts/refine
@@ -23,14 +23,10 @@ export async function refinePrompt(req, res) {
       finalPrompt,
     });
   } catch (error) {
-    console.error(`refinePrompt failed (user=${userId}):`, error.message);
-
-    if (error.isLlmServiceError) {
-      throw HttpError.externalApi(
-        '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.'
-      );
-    }
-
-    throw error;
+    rethrowControllerError(error, {
+      logPrefix: `refinePrompt failed (user=${userId}):`,
+      fallbackMessage: '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.',
+      externalApiMessage: '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.',
+    });
   }
 }

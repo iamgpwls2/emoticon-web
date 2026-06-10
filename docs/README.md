@@ -29,7 +29,11 @@ docs/
 │  ├─ storage-policy.md
 │  └─ error-response.md
 ├─ 03-design/
-│  └─ design-guide.md
+│  ├─ design-guide.md
+│  ├─ gallery-page.md
+│  ├─ landing-page.md
+│  ├─ auth-register-page.md
+│  └─ logo-icon.md
 ├─ 04-security/
 │  ├─ auth-rls-policy.md
 │  └─ api-key-policy.md

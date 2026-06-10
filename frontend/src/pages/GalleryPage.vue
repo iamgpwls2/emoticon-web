@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import FolderCreateModal from '../components/FolderCreateModal.vue'
+import GalleryActionBar from '../components/GalleryActionBar.vue'
+import GalleryFolderMoveModal from '../components/GalleryFolderMoveModal.vue'
 import GalleryGrid from '../components/GalleryGrid.vue'
 import GallerySidebar from '../components/GallerySidebar.vue'
 import GalleryToast from '../components/GalleryToast.vue'
@@ -17,9 +19,11 @@ import {
 } from '../services/collection.service.js'
 import {
   deleteGeneration,
+  deleteGenerations,
   fetchMyGenerations,
 } from '../services/generation.service.js'
 import { toUserErrorMessage } from '../utils/apiError.js'
+import { downloadImage } from '../utils/downloadImage.js'
 
 const DRAG_MIME_TYPE = 'application/x-emoticon-ids'
 const PAGE_LIMIT = 12
@@ -62,6 +66,10 @@ const viewMode = ref('grid')
 const toastMessage = ref('')
 const toastVisible = ref(false)
 let toastTimerId = null
+
+const showFolderMoveModal = ref(false)
+const isBulkDownloading = ref(false)
+const isBulkDeleting = ref(false)
 
 const { favoriteIds, favoriteCount, toggleFavorite, filterFavoriteItems } =
   useFavorites()
@@ -161,6 +169,20 @@ const displayItems = computed(() => {
     return sortedItems.value
   }
   return filterFavoriteItems(sortedItems.value)
+})
+
+const visibleGenerations = computed(() => displayItems.value)
+
+const visibleGenerationIds = computed(() =>
+  visibleGenerations.value.map((item) => item.id)
+)
+
+const isAllVisibleSelected = computed(() => {
+  const visibleIds = visibleGenerationIds.value
+  return (
+    visibleIds.length > 0 &&
+    visibleIds.every((id) => selectedIds.value.includes(id))
+  )
 })
 
 const hasAnyImages = computed(
@@ -290,6 +312,18 @@ function toggleSelectionMode() {
 function clearSelection() {
   selectedIds.value = []
   dragOverFolderId.value = ''
+}
+
+function selectAllVisibleImages() {
+  selectedIds.value = [...visibleGenerationIds.value]
+}
+
+function toggleSelectAllVisible() {
+  if (isAllVisibleSelected.value) {
+    clearSelection()
+  } else {
+    selectAllVisibleImages()
+  }
 }
 
 function toggleSelect(generationId) {
@@ -565,6 +599,93 @@ function handleLoadMore() {
   loadImages({ nextPage: page.value + 1, append: true })
 }
 
+function openFolderMoveModal() {
+  if (selectedIds.value.length === 0) return
+  showFolderMoveModal.value = true
+}
+
+function closeFolderMoveModal() {
+  if (movingIds.value.length > 0) return
+  showFolderMoveModal.value = false
+}
+
+async function handleFolderMoveSelect(collectionId) {
+  if (selectedIds.value.length === 0) return
+
+  const generationIds = [...selectedIds.value]
+  showFolderMoveModal.value = false
+  await moveSelectedGenerations(generationIds, collectionId)
+}
+
+async function handleBulkDelete() {
+  if (selectedIds.value.length === 0 || isBulkDeleting.value) return
+
+  const confirmed = window.confirm(
+    `선택한 ${selectedIds.value.length}개 이미지를 삭제할까요?\n삭제하면 복구할 수 없습니다.`
+  )
+  if (!confirmed) return
+
+  isBulkDeleting.value = true
+  deleteErrorMessage.value = ''
+
+  try {
+    const generationIds = [...selectedIds.value]
+    const result = await deleteGenerations(generationIds)
+    const deletedSet = new Set(result.deletedIds)
+
+    items.value = items.value.filter((item) => !deletedSet.has(item.id))
+    total.value = Math.max(0, total.value - result.deletedCount)
+    clearSelection()
+    await loadCollections()
+    showToast(`${result.deletedCount}개 이미지를 삭제했어요.`)
+  } catch (err) {
+    deleteErrorMessage.value = toUserErrorMessage(
+      err,
+      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+    )
+  } finally {
+    isBulkDeleting.value = false
+  }
+}
+
+async function handleBulkDownload() {
+  if (selectedIds.value.length === 0 || isBulkDownloading.value) return
+
+  const selectedItems = visibleGenerations.value.filter((item) =>
+    selectedIds.value.includes(item.id)
+  )
+
+  isBulkDownloading.value = true
+
+  let successCount = 0
+  let failCount = 0
+
+  for (const item of selectedItems) {
+    const imageUrl = item.generatedImageUrl?.trim()
+    if (!imageUrl) {
+      failCount += 1
+      continue
+    }
+
+    try {
+      await downloadImage(imageUrl, `emoticon-${item.id}.png`)
+      successCount += 1
+    } catch {
+      failCount += 1
+    }
+  }
+
+  isBulkDownloading.value = false
+
+  if (successCount > 0 && failCount === 0) {
+    showToast(`${successCount}개 이미지를 다운로드했어요.`)
+  } else if (successCount > 0) {
+    showToast(`${successCount}개 다운로드 완료, ${failCount}개는 실패했어요.`)
+  } else {
+    showToast('다운로드할 수 있는 이미지가 없습니다.')
+  }
+}
+
 onMounted(async () => {
   await loadCollections()
   await loadImages({ nextPage: 1, append: false })
@@ -742,18 +863,18 @@ onMounted(async () => {
 
           <ErrorMessage :message="folderActionErrorMessage" variant="error" />
 
-          <p
-            v-if="selectionMode"
-            class="gallery-page__selection-hint"
-            role="status"
-          >
-            <template v-if="selectedCount > 0">
-              {{ selectedCount }}개 선택됨 — 사이드바 폴더로 끌어다 놓으면 이동합니다.
-            </template>
-            <template v-else>
-              이동할 이미지를 선택하거나, 카드를 바로 드래그해 보세요.
-            </template>
-          </p>
+          <GalleryActionBar
+            v-if="selectionMode && !isInitialLoading() && !errorMessage"
+            :selected-count="selectedCount"
+            :is-all-visible-selected="isAllVisibleSelected"
+            :has-visible-items="visibleGenerations.length > 0"
+            :bulk-downloading="isBulkDownloading"
+            :bulk-deleting="isBulkDeleting"
+            @folder-move="openFolderMoveModal"
+            @delete="handleBulkDelete"
+            @download="handleBulkDownload"
+            @toggle-select-all="toggleSelectAllVisible"
+          />
 
           <p
             v-if="isInitialLoading()"
@@ -841,6 +962,15 @@ onMounted(async () => {
       :loading="isCreatingFolder"
       @close="closeCreateFolderModal"
       @create="handleCreateFolder"
+    />
+
+    <GalleryFolderMoveModal
+      :open="showFolderMoveModal"
+      :folders="customFolders"
+      :selected-count="selectedCount"
+      :loading="movingIds.length > 0"
+      @close="closeFolderMoveModal"
+      @move="handleFolderMoveSelect"
     />
 
     <GalleryToast :message="toastMessage" :visible="toastVisible" />
@@ -1029,17 +1159,6 @@ onMounted(async () => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-}
-
-.gallery-page__selection-hint {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #6d3df2;
-  background: #f2ecff;
-  border: 1px solid #ddd2ff;
 }
 
 .gallery-page__loading-text {

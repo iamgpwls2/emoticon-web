@@ -1617,6 +1617,16 @@
   cursor: not-allowed;
 }
 
+.auth-page--login .auth-input-wrap input:-webkit-autofill,
+.auth-page--login .auth-input-wrap input:-webkit-autofill:hover,
+.auth-page--login .auth-input-wrap input:-webkit-autofill:focus,
+.auth-page--login .auth-input-wrap input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+  -webkit-text-fill-color: #17213f;
+  caret-color: #17213f;
+}
+
 .auth-page--login .auth-input-toggle {
   display: inline-flex;
   align-items: center;

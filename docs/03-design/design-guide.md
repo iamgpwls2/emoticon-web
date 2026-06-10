@@ -13,6 +13,7 @@
 - 2026-06-07 (Day 9 — 갤러리 UI 기준 반영)
 - 2026-06-07 (Day 11 — ErrorMessage variant·async 상태·empty/loading 기준 반영)
 - 2026-06-08 (랜딩 페이지 · 공통 헤더 · 회원가입 UI · 로고 아이콘 반영)
+- 2026-06-10 (갤러리 Explorer UI 상세 문서 [`gallery-page.md`](./gallery-page.md) 분리)
 
 > 확정 디자인이 아닌 **MVP 기준**입니다. 이후 단계에서 시각 언어를 보강할 수 있습니다.
 
@@ -77,6 +78,8 @@
 랜딩 페이지 상세: [`landing-page.md`](./landing-page.md)
 
 회원가입 페이지 상세: [`auth-register-page.md`](./auth-register-page.md)
+
+갤러리 페이지 상세: [`gallery-page.md`](./gallery-page.md)
 
 ---
 
@@ -265,53 +268,19 @@ enabled 시: accent 배경/텍스트, hover 시 테두리·shadow
 
 ## Day 9 — 갤러리 UI
 
-구현: `GalleryPage.vue`, `GalleryGrid.vue`, `EmoticonCard.vue`
+구현: `GalleryPage.vue`, `GallerySidebar.vue`, `GalleryGrid.vue`, `EmoticonCard.vue`, `FolderCreateModal.vue`, `GalleryToast.vue`
 
-### 1. GalleryPage 레이아웃
+> **상세 디자인 요건** (Explorer 레이아웃·사이드바·반응형·상태·인터랙션): [`gallery-page.md`](./gallery-page.md)
 
-```txt
-[페이지 제목 + 안내 + 총 N개]
-├─ loading  → 로딩 문구 + skeleton grid
-├─ error    → ErrorMessage + [다시 시도]
-├─ empty    → 빈 상태 문구 + /generate 링크
-└─ success  → GalleryGrid + [더 보기] (hasMore일 때)
-```
+### 요약 (MVP)
 
-| 항목 | MVP 값 |
-|------|--------|
-| 컨테이너 | mobile `max-width: 100%`, desktop `960px` |
-| 페이지 패딩 | `32px 20px` (mobile `24px 16px`) |
-| 제목 | `36px` (mobile `28px`), 가운데 정렬 |
-| 섹션 gap | `20px` (mobile `16px`) |
-
-### 2. GalleryGrid 반응형
-
-| 뷰포트 | grid |
-|--------|------|
-| **Mobile** (`max-width: 640px`) | `grid-template-columns: 1fr` — **1열** |
-| **Desktop** (`min-width: 641px`) | `repeat(auto-fill, minmax(220px, 1fr))` |
-
-- gap: mobile `16px`, desktop `20px`
-- loading: shimmer skeleton 카드 6개
-
-### 3. EmoticonCard 표시 규칙
-
-| 영역 | 규칙 |
+| 항목 | 규칙 |
 |------|------|
-| 미리보기 | `aspect-ratio: 1`, `object-fit: contain`, `--code-bg` 카드 |
-| 메타 | `emotion · motion` (14px medium) |
-| 텍스트 | `inputText` (14px, `overflow-wrap: anywhere`) |
-| 날짜 | `<time datetime>` + `Intl.DateTimeFormat('ko-KR')` |
-| 이미지 없음 | placeholder — 「생성 중이거나 실패한 항목입니다.」 등 |
-
-### 4. empty / loading / error UI 문구
-
-| 상태 | 문구·UI |
-|------|---------|
-| **loading** | 「이모티콘 목록을 불러오는 중입니다...」 + skeleton |
-| **empty** | 「아직 생성한 이모티콘이 없습니다.」 + 「이모티콘 만들러 가기」 |
-| **error** | API/fallback 메시지 + 「다시 시도」 버튼 (`min-height 44px`) |
-| **더 보기** | 「더 보기」 / 진행 중 「불러오는 중...」, `hasMore === false` 시 숨김 |
+| 레이아웃 | Desktop: 사이드바 + 메인 패널 / Mobile: 폴더 chip + 패널 |
+| 기본 폴더 | **전체 이미지** (`selectedFolderId = 'all'`) |
+| 보기 | 그리드(1~4열) · 리스트 전환 |
+| 카드 태그 | PNG(보라) + 폴더명(노랑, 분류된 경우만) |
+| empty / error | `ErrorMessage` + 폴더별·전역 empty 문구 (상세는 gallery-page.md) |
 
 오류 스타일: Day 5 `ErrorMessage` / Day 8 action-error 톤과 동일 (`#dc2626`)
 
@@ -414,17 +383,21 @@ disabled 버튼 클릭으로 오류를 **새로 표시하지 않음** — hint/e
 | `ErrorMessage` | 인라인 상태 메시지 (`error` / `success` / `hint` / `loading`) |
 | `LoadingOverlay` | 생성 중 전역 로딩 |
 | `GenerationResult` | 결과 미리보기·비교·다운로드·재생성 |
-| `GalleryGrid` | 갤러리 카드 grid |
+| `GallerySidebar` | 갤러리 폴더 사이드바 (Desktop) |
+| `GalleryGrid` | 갤러리 카드 grid / list |
 | `EmoticonCard` | 갤러리 단일 카드 |
+| `FolderCreateModal` | 폴더 생성 모달 |
+| `GalleryToast` | 갤러리 안내 토스트 |
 
 ---
 
 ## 관련 문서
 
-- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`, `01-prd/06-generation-result-download.md`, `01-prd/07-gallery-delete.md`
+- PRD: `01-prd/02-image-upload-preview.md`, `01-prd/03-emoticon-input.md`, `01-prd/06-generation-result-download.md`, `01-prd/07-gallery-delete.md`, `01-prd/08-gallery-collections.md`
 - 에러 규격: `02-contracts/error-response.md`
 - 테스트: `05-roadmap/test-checklist.md`
 - 전역 스타일: `frontend/src/style.css` (`--accent`, `--border` 등)
 - 랜딩 UI: [`landing-page.md`](./landing-page.md)
 - 로고 아이콘: [`logo-icon.md`](./logo-icon.md)
 - 회원가입 UI: [`auth-register-page.md`](./auth-register-page.md)
+- 갤러리 UI: [`gallery-page.md`](./gallery-page.md)
