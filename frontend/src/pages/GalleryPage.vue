@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import FolderCreateModal from '../components/FolderCreateModal.vue'
@@ -8,6 +8,7 @@ import GalleryFolderMoveModal from '../components/GalleryFolderMoveModal.vue'
 import GalleryGrid from '../components/GalleryGrid.vue'
 import GallerySidebar from '../components/GallerySidebar.vue'
 import GalleryToast from '../components/GalleryToast.vue'
+import { useAuth } from '../composables/useAuth.js'
 import { useGalleryFolders } from '../composables/useGalleryFolders.js'
 import { useGallerySelection } from '../composables/useGallerySelection.js'
 import { useFavorites } from '../composables/useFavorites.js'
@@ -42,8 +43,15 @@ const toastMessage = ref('')
 const toastVisible = ref(false)
 let toastTimerId = null
 
-const { favoriteIds, favoriteCount, toggleFavorite, filterFavoriteItems } =
-  useFavorites()
+const { isAuthReady, isAuthenticated, accessToken, user } = useAuth()
+
+const {
+  favoriteIds,
+  favoriteCount,
+  toggleFavorite,
+  filterFavoriteItems,
+  clearFavorites,
+} = useFavorites()
 
 function showToast(message) {
   toastMessage.value = message
@@ -149,6 +157,7 @@ const {
   handleSidebarRename,
   handleDeleteFolder,
   moveSelectedGenerations,
+  resetFolderUiState,
 } = useGalleryFolders({
   items,
   total,
@@ -188,12 +197,30 @@ const sortedItems = computed(() => {
   return list
 })
 
-const displayItems = computed(() => {
-  if (selectedFolderId.value !== FOLDER_ID.FAVORITE) {
-    return sortedItems.value
+function filterItemsByFolder(list, folderId) {
+  if (folderId === FOLDER_ID.ALL) {
+    return list
   }
-  return filterFavoriteItems(sortedItems.value)
-})
+
+  if (folderId === FOLDER_ID.FAVORITE) {
+    return filterFavoriteItems(list)
+  }
+
+  if (folderId === FOLDER_ID.UNCATEGORIZED) {
+    return list.filter((item) => !item.collectionId)
+  }
+
+  if (folderId.startsWith(COLLECTION_PREFIX)) {
+    const collectionId = folderId.slice(COLLECTION_PREFIX.length)
+    return list.filter((item) => item.collectionId === collectionId)
+  }
+
+  return list
+}
+
+const displayItems = computed(() =>
+  filterItemsByFolder(sortedItems.value, selectedFolderId.value)
+)
 
 /**
  * 현재 화면에 렌더링 중인 이미지 목록.
@@ -225,6 +252,7 @@ const {
   handleBulkDelete,
   handleBulkDownload,
   removeFromSelection,
+  resetSelectionState,
 } = useGallerySelection({
   items,
   total,
@@ -268,7 +296,8 @@ const hasAnyImages = computed(
   () => totalImageCount.value > 0 || items.value.length > 0
 )
 
-const isInitialLoading = () => isLoading.value && items.value.length === 0
+const isInitialLoading = () =>
+  (!isAuthReady.value || isLoading.value) && items.value.length === 0
 const isEmpty = () =>
   !isLoading.value && !errorMessage.value && displayItems.value.length === 0
 const isSuccess = () =>
@@ -319,10 +348,51 @@ function handleLoadMore() {
   loadImages({ nextPage: page.value + 1, append: true })
 }
 
-onMounted(async () => {
-  await loadCollections()
-  await loadImages({ nextPage: 1, append: false })
+let galleryLoadGeneration = 0
+let lastLoadedUserId = null
 
+function resetGalleryState() {
+  galleryLoadGeneration += 1
+  collections.value = []
+  uncategorizedCount.value = 0
+  selectedFolderId.value = FOLDER_ID.ALL
+  items.value = []
+  page.value = 1
+  hasMore.value = false
+  total.value = 0
+  isLoading.value = false
+  isLoadingMore.value = false
+  errorMessage.value = ''
+  deleteErrorMessage.value = ''
+  folderActionErrorMessage.value = ''
+  deletingId.value = ''
+  clearFavorites()
+  resetFolderUiState()
+  resetSelectionState()
+}
+
+watch(
+  [isAuthReady, isAuthenticated, accessToken, () => user.value?.id],
+  async ([ready, authed, token, userId]) => {
+    if (!ready) return
+
+    if (!authed || !token || !userId) {
+      lastLoadedUserId = null
+      resetGalleryState()
+      return
+    }
+
+    if (lastLoadedUserId === userId) return
+    lastLoadedUserId = userId
+
+    const currentGeneration = ++galleryLoadGeneration
+    await refreshGallery()
+    if (currentGeneration !== galleryLoadGeneration) return
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
   showToast('드래그 & 드롭으로 폴더를 이동할 수 있어요!')
 })
 </script>

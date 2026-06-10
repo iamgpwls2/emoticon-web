@@ -1,27 +1,9 @@
-import { supabase } from '../lib/supabase.js';
 import API_BASE_URL from '@/lib/apiClient.js';
+import { resolveAccessToken } from '../lib/authSession.js';
 import { readApiResponse } from '../utils/apiError.js';
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
-}
-
-async function getAccessToken(unauthenticatedMessage) {
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error(unauthenticatedMessage);
-  }
-
-  return accessToken;
 }
 
 /**
@@ -32,7 +14,7 @@ async function getAccessToken(unauthenticatedMessage) {
  * }>}
  */
 export async function fetchMyCollections() {
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '폴더 목록을 보려면 로그인이 필요합니다.'
   );
 
@@ -63,7 +45,7 @@ export async function createCollection(name) {
     throw new Error('폴더 이름을 입력해 주세요.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '폴더를 만들려면 로그인이 필요합니다.'
   );
 
@@ -91,7 +73,7 @@ export async function fetchCollectionDetail(id, { page = 1, limit = 12 } = {}) {
     throw new Error('폴더 id가 필요합니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '폴더 내용을 보려면 로그인이 필요합니다.'
   );
 
@@ -140,7 +122,7 @@ export async function renameCollection(id, name) {
     throw new Error('폴더 이름을 입력해 주세요.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '폴더 이름을 변경하려면 로그인이 필요합니다.'
   );
 
@@ -168,7 +150,7 @@ export async function deleteCollection(id, { cascade = false } = {}) {
     throw new Error('폴더 id가 필요합니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '폴더를 삭제하려면 로그인이 필요합니다.'
   );
 
@@ -200,7 +182,7 @@ export async function moveGenerationToCollection(generationId, collectionId) {
     throw new Error('이동할 이모티콘 id가 필요합니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '폴더 이동을 하려면 로그인이 필요합니다.'
   );
 

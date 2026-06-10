@@ -1,27 +1,12 @@
-import { supabase } from '../lib/supabase.js';
 import API_BASE_URL from '@/lib/apiClient.js';
+import { resolveAccessToken } from '../lib/authSession.js';
 import { readApiResponse } from '../utils/apiError.js';
 
 const REFINE_FAILED_MESSAGE =
   '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.';
-
-async function getAccessToken() {
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('프롬프트를 구체화하려면 로그인이 필요합니다.');
-  }
-
-  return accessToken;
-}
+const CHAT_FAILED_MESSAGE =
+  '프롬프트 대화에 실패했습니다. 다시 시도해 주세요.';
+const AUTH_REQUIRED_MESSAGE = '프롬프트를 구체화하려면 로그인이 필요합니다.';
 
 /**
  * 사용자 입력을 backend POST /api/prompts/refine 으로 보내 storyPrompt / finalPrompt를 받습니다.
@@ -34,7 +19,7 @@ export async function refinePrompt({
   inputText,
   originalImageUrl,
 }) {
-  const accessToken = await getAccessToken();
+  const accessToken = await resolveAccessToken(AUTH_REQUIRED_MESSAGE);
 
   const payload = {
     emotion,
@@ -64,5 +49,54 @@ export async function refinePrompt({
   return {
     storyPrompt: body.storyPrompt,
     finalPrompt: body.finalPrompt,
+  };
+}
+
+/**
+ * 대화형 프롬프트 구체화 — backend POST /api/prompts/chat
+ * @param {{
+ *   messages: Array<{ role: 'user' | 'assistant', content: string }>,
+ *   context: { emotion?: string, motion?: string, text?: string },
+ *   finalTurn?: boolean
+ * }} payload
+ * @returns {Promise<
+ *   | { type: 'question', message: string, choices: string[] }
+ *   | { type: 'complete', message: string, finalPrompt: string }
+ * >}
+ */
+export async function chatPrompt({ messages, context, finalTurn = false }) {
+  const accessToken = await resolveAccessToken(AUTH_REQUIRED_MESSAGE);
+
+  const response = await fetch(`${API_BASE_URL}/api/prompts/chat`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: Array.isArray(messages) ? messages : [],
+      context: {
+        emotion: context?.emotion?.trim() || '',
+        motion: context?.motion?.trim() || '',
+        text: context?.text?.trim() || '',
+      },
+      finalTurn: finalTurn === true,
+    }),
+  });
+
+  const body = await readApiResponse(response, CHAT_FAILED_MESSAGE);
+
+  if (body.type === 'complete') {
+    return {
+      type: 'complete',
+      message: body.message,
+      finalPrompt: body.finalPrompt,
+    };
+  }
+
+  return {
+    type: 'question',
+    message: body.message,
+    choices: body.choices,
   };
 }

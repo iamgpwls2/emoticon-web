@@ -54,10 +54,15 @@ export function useFavorites() {
     return items.filter((item) => idSet.has(item.id))
   }
 
+  function clearFavorites() {
+    favoriteIds.value = []
+  }
+
   return {
     favoriteIds,
     favoriteCount,
     toggleFavorite,
     filterFavoriteItems,
+    clearFavorites,
   }
 }

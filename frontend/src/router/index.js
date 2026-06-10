@@ -4,7 +4,9 @@ import RegisterPage from '../views/RegisterPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import CreatePage from '../pages/CreatePage.vue'
 import GalleryPage from '../pages/GalleryPage.vue'
-import { supabase } from '../lib/supabase.js'
+import { initAuth, useAuthState } from '../lib/authSession.js'
+
+const { session } = useAuthState()
 
 const router = createRouter({
   history: createWebHistory(),
@@ -42,13 +44,13 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  const { data, error } = await supabase.auth.getSession()
-
-  if (error) {
-    console.error('Failed to read auth session:', error.message)
+  try {
+    await initAuth()
+  } catch (error) {
+    console.error('Failed to initialize auth session:', error.message)
   }
 
-  const isAuthenticated = Boolean(data.session)
+  const isAuthenticated = Boolean(session.value)
 
   if (to.meta.requiresAuth && !isAuthenticated) {
     return {
@@ -58,7 +60,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && isAuthenticated) {
-    return { path: '/generate' }
+    return { path: '/' }
   }
 
   return true

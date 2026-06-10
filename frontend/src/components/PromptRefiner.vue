@@ -1,8 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import ErrorMessage from './ErrorMessage.vue'
-import { useAsyncState } from '../composables/useAsyncState.js'
-import { refinePrompt } from '../services/prompt.service.js'
 
 const props = defineProps({
   emotion: {
@@ -25,22 +23,17 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  storyPrompt: {
+    type: String,
+    default: '',
+  },
+  finalPrompt: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['update:storyPrompt', 'update:finalPrompt'])
-
-const storyPrompt = ref('')
-const finalPrompt = ref('')
-const refined = ref(false)
-
-const {
-  loading,
-  error: errorMessage,
-  successMessage,
-  run,
-} = useAsyncState({
-  fallbackError: '프롬프트 구체화에 실패했습니다. 다시 시도해 주세요.',
-})
+const emit = defineEmits(['open-chat', 'update:finalPrompt'])
 
 const canRefine = computed(() =>
   Boolean(props.emotion?.trim() && props.motion?.trim())
@@ -49,41 +42,18 @@ const canRefine = computed(() =>
 const hasReferenceImage = computed(() => Boolean(props.originalImageUrl?.trim()))
 
 const isButtonDisabled = computed(
-  () => !canRefine.value || loading.value || props.uploadRequired
+  () => !canRefine.value || props.uploadRequired
 )
 
-const refineButtonLabel = computed(() =>
-  loading.value ? '구체화 중...' : '프롬프트 구체화하기'
-)
+const hasFinalPrompt = computed(() => Boolean(props.finalPrompt?.trim()))
 
-function handleFinalPromptInput() {
-  emit('update:finalPrompt', finalPrompt.value)
+function handleFinalPromptInput(event) {
+  emit('update:finalPrompt', event.target.value)
 }
 
-async function handleRefine() {
+function handleOpenChat() {
   if (isButtonDisabled.value) return
-
-  const result = await run(
-    () =>
-      refinePrompt({
-        emotion: props.emotion,
-        motion: props.motion,
-        inputText: props.inputText,
-        originalImageUrl: props.originalImageUrl?.trim() || undefined,
-      }),
-    {
-      successMessage: '프롬프트 구체화가 완료되었습니다.',
-    }
-  )
-
-  if (!result) return
-
-  storyPrompt.value = result.storyPrompt
-  finalPrompt.value = result.finalPrompt
-  refined.value = true
-
-  emit('update:storyPrompt', result.storyPrompt)
-  emit('update:finalPrompt', result.finalPrompt)
+  emit('open-chat')
 }
 </script>
 
@@ -93,20 +63,10 @@ async function handleRefine() {
       type="button"
       class="prompt-refiner__btn"
       :disabled="isButtonDisabled"
-      :aria-busy="loading"
-      @click="handleRefine"
+      @click="handleOpenChat"
     >
-      {{ refineButtonLabel }}
+      프롬프트 구체화하기
     </button>
-
-    <ErrorMessage
-      v-if="loading"
-      message="프롬프트를 구체화하는 중입니다..."
-      variant="loading"
-    />
-
-    <ErrorMessage :message="errorMessage" variant="error" />
-    <ErrorMessage :message="successMessage" variant="success" />
 
     <p v-if="uploadRequired" class="prompt-refiner__hint prompt-refiner__hint--warning">
       이미지를 변경했습니다. 새 이미지를 먼저 업로드해야 프롬프트 구체화와 이미지
@@ -122,13 +82,13 @@ async function handleRefine() {
       <p class="prompt-refiner__story">{{ storyPrompt }}</p>
     </div>
 
-    <div v-if="refined" class="prompt-refiner__field">
+    <div v-if="hasFinalPrompt" class="prompt-refiner__field">
       <label class="prompt-refiner__label" for="prompt-refiner-final">
         최종 프롬프트
       </label>
       <textarea
         id="prompt-refiner-final"
-        v-model="finalPrompt"
+        :value="finalPrompt"
         class="prompt-refiner__control"
         rows="6"
         @input="handleFinalPromptInput"

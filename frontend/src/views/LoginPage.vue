@@ -54,7 +54,7 @@ function resolveRedirectPath() {
   if (typeof redirect === 'string' && redirect.startsWith('/')) {
     return redirect
   }
-  return '/generate'
+  return '/'
 }
 
 async function handleSubmit() {

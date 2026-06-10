@@ -1,27 +1,9 @@
-import { supabase } from '../lib/supabase.js';
 import API_BASE_URL from '@/lib/apiClient.js';
+import { resolveAccessToken } from '../lib/authSession.js';
 import { readApiResponse } from '../utils/apiError.js';
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
-}
-
-async function getAccessToken(unauthenticatedMessage) {
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error(unauthenticatedMessage);
-  }
-
-  return accessToken;
 }
 
 /**
@@ -49,7 +31,7 @@ export async function createGeneration({
     throw new Error('finalPrompt는 필수값입니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '이모티콘을 생성하려면 로그인이 필요합니다.'
   );
 
@@ -110,7 +92,7 @@ export async function fetchMyGenerations({
   limit = 12,
   collectionId,
 } = {}) {
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '이모티콘 목록을 보려면 로그인이 필요합니다.'
   );
 
@@ -156,7 +138,7 @@ export async function deleteGeneration(id) {
     throw new Error('삭제할 이모티콘 id가 필요합니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '이모티콘을 삭제하려면 로그인이 필요합니다.'
   );
 
@@ -185,7 +167,7 @@ export async function deleteGenerations(ids) {
     throw new Error('삭제할 이모티콘 id 목록이 필요합니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '이모티콘을 삭제하려면 로그인이 필요합니다.'
   );
 
@@ -220,7 +202,7 @@ export async function saveGenerationToGallery(id) {
     throw new Error('저장할 이모티콘 id가 필요합니다.');
   }
 
-  const accessToken = await getAccessToken(
+  const accessToken = await resolveAccessToken(
     '갤러리에 저장하려면 로그인이 필요합니다.'
   );
 

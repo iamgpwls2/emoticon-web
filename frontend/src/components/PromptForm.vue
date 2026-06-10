@@ -51,6 +51,7 @@ const MOTION_OPTIONS = [
   '축하',
   '빠직거리기',
   '빙글빙글',
+  '기타',
 ]
 
 const emit = defineEmits(['update:form', 'interaction'])

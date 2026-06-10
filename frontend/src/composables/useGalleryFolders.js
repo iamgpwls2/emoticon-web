@@ -174,9 +174,44 @@ export function useGalleryFolders({
   }
 
   /**
+   * 폴더 이동 API 성공 후, 현재 선택된 폴더 뷰에 맞게 로컬 items를 갱신합니다.
+   * - 전체/즐겨찾기: 목록 유지, collectionId만 갱신
+   * - 미분류/컬렉션: 현재 폴더에서 벗어난 항목만 제거
+   */
+  function applyMoveToLocalItems(generationIds, targetCollectionId) {
+    const folderId = selectedFolderId.value
+    const movedCount = generationIds.length
+
+    if (folderId === FOLDER_ID.ALL || folderId === FOLDER_ID.FAVORITE) {
+      items.value = items.value.map((item) =>
+        generationIds.includes(item.id)
+          ? { ...item, collectionId: targetCollectionId ?? null }
+          : item
+      )
+      return
+    }
+
+    if (folderId === FOLDER_ID.UNCATEGORIZED) {
+      if (targetCollectionId) {
+        items.value = items.value.filter((item) => !generationIds.includes(item.id))
+        total.value = Math.max(0, total.value - movedCount)
+      }
+      return
+    }
+
+    if (folderId.startsWith(COLLECTION_PREFIX)) {
+      const currentCollectionId = folderId.slice(COLLECTION_PREFIX.length)
+      if (targetCollectionId !== currentCollectionId) {
+        items.value = items.value.filter((item) => !generationIds.includes(item.id))
+        total.value = Math.max(0, total.value - movedCount)
+      }
+    }
+  }
+
+  /**
    * 선택된 generation들을 대상 폴더로 이동하고 로컬 state를 갱신합니다.
-   * API 성공 후 items에서 이동된 id를 제거하고(현재 폴더 뷰 기준),
-   * total·폴더 개수(loadCollections)를 맞춘 뒤 선택을 초기화합니다.
+   * API 성공 후 현재 폴더 뷰 기준으로 items·total을 맞추고,
+   * 사이드바 폴더 개수(loadCollections)를 갱신한 뒤 선택을 초기화합니다.
    */
   async function moveSelectedGenerations(generationIds, collectionId) {
     folderActionErrorMessage.value = ''
@@ -191,8 +226,7 @@ export function useGalleryFolders({
         }
       }
 
-      items.value = items.value.filter((item) => !generationIds.includes(item.id))
-      total.value = Math.max(0, total.value - generationIds.length)
+      applyMoveToLocalItems(generationIds, collectionId)
       clearSelection()
       await loadCollections()
 
@@ -342,6 +376,16 @@ export function useGalleryFolders({
     }
   }
 
+  function resetFolderUiState() {
+    movingIds.value = []
+    dragOverFolderId.value = ''
+    showCreateFolderModal.value = false
+    isCreatingFolder.value = false
+    isRenamingFolder.value = false
+    isEditingFolderName.value = false
+    editFolderName.value = ''
+  }
+
   return {
     movingIds,
     dragOverFolderId,
@@ -371,5 +415,6 @@ export function useGalleryFolders({
     handleRenameFolder,
     handleSidebarRename,
     handleDeleteFolder,
+    resetFolderUiState,
   }
 }

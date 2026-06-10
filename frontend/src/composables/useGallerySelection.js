@@ -195,6 +195,17 @@ export function useGallerySelection({
     selectedIds.value = selectedIds.value.filter((id) => id !== generationId)
   }
 
+  function resetSelectionState() {
+    selectionMode.value = false
+    selectedIds.value = []
+    draggedImageId.value = ''
+    isDragging.value = false
+    showFolderMoveModal.value = false
+    isBulkDownloading.value = false
+    isBulkDeleting.value = false
+    dragOverFolderId.value = ''
+  }
+
   return {
     selectionMode,
     selectedIds,
@@ -219,5 +230,6 @@ export function useGallerySelection({
     handleBulkDelete,
     handleBulkDownload,
     removeFromSelection,
+    resetSelectionState,
   }
 }

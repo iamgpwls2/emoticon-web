@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import ImageUploader from '../components/ImageUploader.vue'
 import PromptForm from '../components/PromptForm.vue'
 import PromptRefiner from '../components/PromptRefiner.vue'
+import PromptChatModal from '../components/PromptChatModal.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import GenerationResult from '../components/GenerationResult.vue'
 import { supabase } from '../lib/supabase.js'
@@ -27,6 +28,7 @@ const generationErrorMessage = ref('')
 const regenerateErrorMessage = ref('')
 const lastGenerationPayload = ref(null)
 const savedToGallery = ref(false)
+const isPromptChatModalOpen = ref(false)
 
 const REGENERATE_FAILED_MESSAGE =
   '다시 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.'
@@ -103,6 +105,25 @@ const finalPromptHintMessage = computed(() => {
   if (hasFinalPrompt.value || !isFormComplete.value) return ''
   return '프롬프트 구체화 후 최종 프롬프트를 확인해 주세요.'
 })
+
+const promptChatContext = computed(() => ({
+  emotion: promptForm.value.emotion,
+  motion: promptForm.value.motion,
+  text: promptForm.value.text,
+}))
+
+function onOpenPromptChat() {
+  isPromptChatModalOpen.value = true
+}
+
+function onClosePromptChat() {
+  isPromptChatModalOpen.value = false
+}
+
+function onPromptChatComplete(prompt) {
+  finalPrompt.value = prompt
+  isPromptChatModalOpen.value = false
+}
 
 function onFileSelected() {
   uploadedImage.value = null
@@ -223,8 +244,8 @@ async function handleRegenerate() {
       <header class="create-page__header generate-hero">
         <h1 class="create-page__title">이모티콘 생성</h1>
         <p class="create-page__lead">
-          이미지를 업로드하고 감정·모션·텍스트를 입력한 뒤 다음 단계로
-          진행합니다.
+          이미지를 업로드하고 감정·모션을 선택한 뒤 프롬프트를 구체화합니다.
+          이모티콘 텍스트는 선택 사항입니다.
         </p>
       </header>
 
@@ -255,7 +276,9 @@ async function handleRegenerate() {
                 :input-text="promptForm.text"
                 :original-image-url="originalImageUrl"
                 :upload-required="isUploadRequired"
-                @update:story-prompt="storyPrompt = $event"
+                :story-prompt="storyPrompt"
+                :final-prompt="finalPrompt"
+                @open-chat="onOpenPromptChat"
                 @update:final-prompt="finalPrompt = $event"
               />
             </fieldset>
@@ -292,5 +315,12 @@ async function handleRegenerate() {
         />
       </section>
     </div>
+
+    <PromptChatModal
+      :is-open="isPromptChatModalOpen"
+      :context="promptChatContext"
+      @close="onClosePromptChat"
+      @complete="onPromptChatComplete"
+    />
   </section>
 </template>
