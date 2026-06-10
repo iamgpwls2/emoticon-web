@@ -24,6 +24,7 @@ import {
 } from '../services/generation.service.js'
 import { toUserErrorMessage } from '../utils/apiError.js'
 import { downloadImage } from '../utils/downloadImage.js'
+import { COLLECTION_PREFIX, FOLDER_ID } from '../constants/gallery.js'
 
 const DRAG_MIME_TYPE = 'application/x-emoticon-ids'
 const PAGE_LIMIT = 12
@@ -33,7 +34,7 @@ const TOAST_DURATION_MS = 3000
 const collections = ref([])
 const uncategorizedCount = ref(0)
 
-const selectedFolderId = ref('all')
+const selectedFolderId = ref(FOLDER_ID.ALL)
 const items = ref([])
 const page = ref(1)
 const hasMore = ref(false)
@@ -86,10 +87,10 @@ const totalImageCount = computed(
 const selectedCount = computed(() => selectedIds.value.length)
 
 const activeCollection = computed(() =>
-  selectedFolderId.value.startsWith('collection:')
+  selectedFolderId.value.startsWith(COLLECTION_PREFIX)
     ? collections.value.find(
         (collection) =>
-          collection.id === selectedFolderId.value.slice('collection:'.length)
+          collection.id === selectedFolderId.value.slice(COLLECTION_PREFIX.length)
       ) ?? null
     : null
 )
@@ -118,9 +119,9 @@ const existingFolderNames = computed(() => [
 ])
 
 const filterTitle = computed(() => {
-  if (selectedFolderId.value === 'all') return '전체 이미지'
-  if (selectedFolderId.value === 'favorite') return '즐겨찾기'
-  if (selectedFolderId.value === 'uncategorized') return '미분류'
+  if (selectedFolderId.value === FOLDER_ID.ALL) return '전체 이미지'
+  if (selectedFolderId.value === FOLDER_ID.FAVORITE) return '즐겨찾기'
+  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) return '미분류'
   if (activeCollection.value) return activeCollection.value.name
   return '갤러리'
 })
@@ -133,9 +134,9 @@ const filterDescription = computed(() => {
 })
 
 const folderItemCount = computed(() => {
-  if (selectedFolderId.value === 'all') return totalImageCount.value
-  if (selectedFolderId.value === 'favorite') return favoriteCount.value
-  if (selectedFolderId.value === 'uncategorized') return uncategorizedCount.value
+  if (selectedFolderId.value === FOLDER_ID.ALL) return totalImageCount.value
+  if (selectedFolderId.value === FOLDER_ID.FAVORITE) return favoriteCount.value
+  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) return uncategorizedCount.value
   if (activeCollection.value) return activeCollection.value.itemCount ?? 0
   return total.value
 })
@@ -165,7 +166,7 @@ const sortedItems = computed(() => {
 })
 
 const displayItems = computed(() => {
-  if (selectedFolderId.value !== 'favorite') {
+  if (selectedFolderId.value !== FOLDER_ID.FAVORITE) {
     return sortedItems.value
   }
   return filterFavoriteItems(sortedItems.value)
@@ -213,9 +214,9 @@ const dropEnabled = computed(() => isDragging.value)
  * - 'all' / 'favorite' → undefined (서버가 전체 목록 반환)
  */
 function resolveCollectionIdForFetch() {
-  if (selectedFolderId.value === 'uncategorized') return 'uncategorized'
-  if (selectedFolderId.value.startsWith('collection:')) {
-    return selectedFolderId.value.slice('collection:'.length)
+  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) return FOLDER_ID.UNCATEGORIZED
+  if (selectedFolderId.value.startsWith(COLLECTION_PREFIX)) {
+    return selectedFolderId.value.slice(COLLECTION_PREFIX.length)
   }
   return undefined
 }
@@ -293,12 +294,12 @@ async function refreshGallery({ resetPage = true } = {}) {
 }
 
 function selectFolder(folderId) {
-  if (folderId.startsWith('collection:') || folderId === 'uncategorized') {
+  if (folderId.startsWith(COLLECTION_PREFIX) || folderId === FOLDER_ID.UNCATEGORIZED) {
     selectedFolderId.value = folderId
-  } else if (folderId === 'all' || folderId === 'favorite') {
+  } else if (folderId === FOLDER_ID.ALL || folderId === FOLDER_ID.FAVORITE) {
     selectedFolderId.value = folderId
   } else {
-    selectedFolderId.value = `collection:${folderId}`
+    selectedFolderId.value = `${COLLECTION_PREFIX}${folderId}`
   }
 
   page.value = 1
@@ -307,9 +308,9 @@ function selectFolder(folderId) {
   clearSelection()
   isEditingFolderName.value = false
 
-  if (selectedFolderId.value.startsWith('collection:')) {
+  if (selectedFolderId.value.startsWith(COLLECTION_PREFIX)) {
     const collection = collections.value.find(
-      (item) => item.id === selectedFolderId.value.slice('collection:'.length)
+      (item) => item.id === selectedFolderId.value.slice(COLLECTION_PREFIX.length)
     )
     editFolderName.value = collection?.name ?? ''
   }
@@ -390,17 +391,17 @@ function parseDraggedIds(event) {
 }
 
 function resolveDropFolderId(folderId) {
-  if (folderId === 'uncategorized') return null
-  if (folderId.startsWith('collection:')) {
-    return folderId.slice('collection:'.length)
+  if (folderId === FOLDER_ID.UNCATEGORIZED) return null
+  if (folderId.startsWith(COLLECTION_PREFIX)) {
+    return folderId.slice(COLLECTION_PREFIX.length)
   }
   return folderId
 }
 
 function getFolderDisplayName(folderId) {
-  if (folderId === 'uncategorized') return '미분류'
-  if (folderId.startsWith('collection:')) {
-    const id = folderId.slice('collection:'.length)
+  if (folderId === FOLDER_ID.UNCATEGORIZED) return '미분류'
+  if (folderId.startsWith(COLLECTION_PREFIX)) {
+    const id = folderId.slice(COLLECTION_PREFIX.length)
     return collections.value.find((item) => item.id === id)?.name ?? '폴더'
   }
   const folder = collections.value.find((item) => item.id === folderId)
@@ -442,7 +443,7 @@ async function moveSelectedGenerations(generationIds, collectionId) {
     await loadCollections()
 
     const folderLabel = collectionId
-      ? getFolderDisplayName(`collection:${collectionId}`)
+      ? getFolderDisplayName(`${COLLECTION_PREFIX}${collectionId}`)
       : '미분류'
     showToast(`이미지를 ${folderLabel} 폴더로 이동했어요.`)
   } catch (err) {
@@ -550,7 +551,7 @@ async function handleRenameFolder() {
 
 async function handleSidebarRename({ folderId, name }) {
   editFolderName.value = name
-  selectedFolderId.value = `collection:${folderId}`
+  selectedFolderId.value = `${COLLECTION_PREFIX}${folderId}`
   await handleRenameFolder()
 }
 
@@ -575,7 +576,7 @@ async function handleDeleteFolder(folderId) {
 
   try {
     await deleteCollection(collection.id, { cascade: deleteImagesToo })
-    selectedFolderId.value = 'uncategorized'
+    selectedFolderId.value = FOLDER_ID.UNCATEGORIZED
     await refreshGallery()
     showToast('폴더가 삭제되었습니다.')
   } catch (err) {
@@ -749,24 +750,24 @@ onMounted(async () => {
           <button
             type="button"
             class="gallery-page__folder-chip"
-            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === 'all' }"
-            @click="selectFolder('all')"
+            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.ALL }"
+            @click="selectFolder(FOLDER_ID.ALL)"
           >
             전체 {{ totalImageCount }}
           </button>
           <button
             type="button"
             class="gallery-page__folder-chip"
-            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === 'favorite' }"
-            @click="selectFolder('favorite')"
+            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.FAVORITE }"
+            @click="selectFolder(FOLDER_ID.FAVORITE)"
           >
             즐겨찾기 {{ favoriteCount }}
           </button>
           <button
             type="button"
             class="gallery-page__folder-chip"
-            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === 'uncategorized' }"
-            @click="selectFolder('uncategorized')"
+            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.UNCATEGORIZED }"
+            @click="selectFolder(FOLDER_ID.UNCATEGORIZED)"
           >
             미분류 {{ uncategorizedCount }}
           </button>
@@ -777,7 +778,7 @@ onMounted(async () => {
             class="gallery-page__folder-chip"
             :class="{
               'gallery-page__folder-chip--active':
-                selectedFolderId === `collection:${folder.id}`,
+                selectedFolderId === `${COLLECTION_PREFIX}${folder.id}`,
             }"
             @click="selectFolder(folder.id)"
           >
@@ -935,9 +936,9 @@ onMounted(async () => {
           <div v-else-if="isEmpty()" class="gallery-page__empty">
             <p class="gallery-page__empty-text">
               {{
-                selectedFolderId === 'favorite'
+                selectedFolderId === FOLDER_ID.FAVORITE
                   ? '즐겨찾기한 이미지가 없습니다. 카드의 별 아이콘을 눌러 추가해 보세요.'
-                  : selectedFolderId === 'uncategorized'
+                  : selectedFolderId === FOLDER_ID.UNCATEGORIZED
                     ? '미분류 이미지가 없습니다.'
                     : '이 폴더가 비어 있습니다. 다른 폴더에서 이미지를 끌어다 놓아 보세요.'
               }}
@@ -970,7 +971,7 @@ onMounted(async () => {
 
             <p class="gallery-page__item-count">{{ displayItems.length }}개 항목</p>
 
-            <div v-if="hasMore && selectedFolderId !== 'favorite'" class="gallery-page__load-more">
+            <div v-if="hasMore && selectedFolderId !== FOLDER_ID.FAVORITE" class="gallery-page__load-more">
               <button
                 type="button"
                 class="gallery-page__load-more-btn"

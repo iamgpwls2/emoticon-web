@@ -1,4 +1,6 @@
 <script setup>
+import { FOLDER_ID, COLLECTION_PREFIX } from '../constants/gallery.js'
+
 const props = defineProps({
   selectedFolderId: {
     type: String,
@@ -41,27 +43,31 @@ const emit = defineEmits([
 ])
 
 const systemFolders = [
-  { id: 'all', name: '전체 이미지', icon: '🖼️' },
-  { id: 'favorite', name: '즐겨찾기', icon: '⭐' },
-  { id: 'uncategorized', name: '미분류', icon: '📂' },
+  { id: FOLDER_ID.ALL, name: '전체 이미지', icon: '🖼️' },
+  { id: FOLDER_ID.FAVORITE, name: '즐겨찾기', icon: '⭐' },
+  { id: FOLDER_ID.UNCATEGORIZED, name: '미분류', icon: '📂' },
 ]
 
 function getFolderCount(folderId) {
-  if (folderId === 'all') return props.allCount
-  if (folderId === 'favorite') return props.favoriteCount
-  if (folderId === 'uncategorized') return props.uncategorizedCount
+  if (folderId === FOLDER_ID.ALL) return props.allCount
+  if (folderId === FOLDER_ID.FAVORITE) return props.favoriteCount
+  if (folderId === FOLDER_ID.UNCATEGORIZED) return props.uncategorizedCount
 
   const folder = props.customFolders.find((item) => item.id === folderId)
   return folder?.itemCount ?? 0
 }
 
 function isDropTarget(folderId) {
-  return props.dropEnabled && folderId !== 'all' && folderId !== 'favorite'
+  return (
+    props.dropEnabled &&
+    folderId !== FOLDER_ID.ALL &&
+    folderId !== FOLDER_ID.FAVORITE
+  )
 }
 
 function isFolderActive(folderId) {
   if (folderId === props.selectedFolderId) return true
-  if (props.selectedFolderId === `collection:${folderId}`) return true
+  if (props.selectedFolderId === `${COLLECTION_PREFIX}${folderId}`) return true
   return false
 }
 
