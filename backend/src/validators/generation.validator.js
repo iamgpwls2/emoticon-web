@@ -10,6 +10,10 @@ import {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function isValidUuid(value) {
+  return typeof value === 'string' && UUID_PATTERN.test(value.trim());
+}
+
 /**
  * POST /api/generations 요청 body 검증.
  * finalPrompt 필수 · 나머지 필드는 선택.
@@ -22,6 +26,7 @@ export function validateCreateGeneration(req, res, next) {
     inputText,
     storyPrompt,
     finalPrompt,
+    collectionId,
   } = req.body ?? {};
   const errors = [];
 
@@ -48,6 +53,18 @@ export function validateCreateGeneration(req, res, next) {
   pushOptionalStringField(errors, 'inputText', inputText);
   pushOptionalStringField(errors, 'storyPrompt', storyPrompt);
 
+  if (
+    collectionId !== undefined &&
+    collectionId !== null &&
+    collectionId !== '' &&
+    !isValidUuid(collectionId)
+  ) {
+    errors.push({
+      field: 'collectionId',
+      message: 'collectionId 형식이 올바르지 않습니다.',
+    });
+  }
+
   if (errors.length > 0) {
     return next(
       HttpError.validation('입력값을 확인해 주세요.', { errors })
@@ -73,6 +90,74 @@ export function validateCreateGeneration(req, res, next) {
   }
 
   trimOptionalOriginalImageUrl(req);
+
+  if (typeof collectionId === 'string' && collectionId.trim()) {
+    req.body.collectionId = collectionId.trim();
+  } else {
+    delete req.body.collectionId;
+  }
+
+  next();
+}
+
+/**
+ * PATCH /api/generations/:id/collection body 검증.
+ */
+export function validateMoveGenerationCollection(req, res, next) {
+  const { collectionId } = req.body ?? {};
+  const errors = [];
+
+  if (
+    collectionId !== undefined &&
+    collectionId !== null &&
+    collectionId !== '' &&
+    !isValidUuid(collectionId)
+  ) {
+    errors.push({
+      field: 'collectionId',
+      message: 'collectionId 형식이 올바르지 않습니다.',
+    });
+  }
+
+  if (errors.length > 0) {
+    return next(
+      HttpError.validation('입력값을 확인해 주세요.', { errors })
+    );
+  }
+
+  if (typeof collectionId === 'string' && collectionId.trim()) {
+    req.body.collectionId = collectionId.trim();
+  } else {
+    req.body.collectionId = null;
+  }
+
+  next();
+}
+
+/**
+ * GET /api/generations/me query 검증.
+ */
+export function validateListMyGenerationsQuery(req, res, next) {
+  const { collectionId } = req.query ?? {};
+
+  if (
+    typeof collectionId === 'string' &&
+    collectionId.trim() &&
+    collectionId.trim() !== 'uncategorized' &&
+    !isValidUuid(collectionId)
+  ) {
+    return next(
+      HttpError.validation('입력값을 확인해 주세요.', {
+        errors: [
+          {
+            field: 'collectionId',
+            message: 'collectionId 형식이 올바르지 않습니다.',
+          },
+        ],
+      })
+    );
+  }
+
   next();
 }
 

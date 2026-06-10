@@ -262,6 +262,79 @@ export async function createGeneratedEmoticonSignedUrl(
 }
 
 /**
+ * DB에 저장된 generated_image_url 목록을 받아, 각 URL에서 object path를 추출한 뒤
+ * 새 signed URL을 일괄 발급해 같은 순서의 배열로 반환합니다.
+ *
+ * - DB에는 생성 시점의 signed URL이 저장되는데 1시간 뒤 만료되므로,
+ *   갤러리 조회 등 읽기 시점마다 이 함수로 신선한 URL을 다시 만들어야 합니다.
+ * - path 추출 실패(외부 URL 등)·재발급 실패 항목은 저장된 원본 값을 그대로 반환합니다.
+ *
+ * @param {Array<string | null | undefined>} generatedImageUrls
+ * @param {number} [expiresInSeconds=3600]
+ * @returns {Promise<Array<string | null>>}
+ */
+export async function refreshGeneratedEmoticonSignedUrls(
+  generatedImageUrls,
+  expiresInSeconds = DEFAULT_SIGNED_URL_EXPIRES_IN_SECONDS
+) {
+  if (!Array.isArray(generatedImageUrls) || generatedImageUrls.length === 0) {
+    return [];
+  }
+
+  // 각 URL에서 generated-emoticons bucket의 object path를 추출 (실패 시 null)
+  const paths = generatedImageUrls.map((url) => {
+    const trimmedUrl = typeof url === 'string' ? url.trim() : '';
+    if (!trimmedUrl) {
+      return null;
+    }
+
+    const storageRef = parseSupabaseStorageObjectUrl(trimmedUrl);
+    if (!storageRef || storageRef.bucket !== GENERATED_EMOTICONS_BUCKET) {
+      return null;
+    }
+
+    return storageRef.path;
+  });
+
+  const fallbackUrls = generatedImageUrls.map((url) => {
+    const trimmedUrl = typeof url === 'string' ? url.trim() : '';
+    return trimmedUrl || null;
+  });
+
+  const uniquePaths = [...new Set(paths.filter(Boolean))];
+  if (uniquePaths.length === 0) {
+    return fallbackUrls;
+  }
+
+  const { data, error } = await supabaseAdmin.storage
+    .from(GENERATED_EMOTICONS_BUCKET)
+    .createSignedUrls(uniquePaths, expiresInSeconds);
+
+  if (error || !Array.isArray(data)) {
+    // 재발급 실패 시 목록 조회 자체는 살리고 저장된 URL을 그대로 내려준다.
+    console.warn(
+      'Failed to refresh signed URLs for generated emoticons:',
+      error?.message ?? 'unknown'
+    );
+    return fallbackUrls;
+  }
+
+  const signedUrlByPath = new Map();
+  for (const entry of data) {
+    if (entry?.path && entry?.signedUrl && !entry.error) {
+      signedUrlByPath.set(entry.path, entry.signedUrl);
+    }
+  }
+
+  return paths.map((path, index) => {
+    if (path && signedUrlByPath.has(path)) {
+      return signedUrlByPath.get(path);
+    }
+    return fallbackUrls[index];
+  });
+}
+
+/**
  * 생성된 이모티콘 이미지를 Supabase Storage `generated-emoticons` bucket에 업로드합니다.
  * backend controller에서만 호출하세요.
  *

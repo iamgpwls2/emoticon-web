@@ -1,5 +1,9 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import { deleteGeneratedEmoticonByUrl } from './storage.service.js';
+import { assertCollectionOwnership } from './collection.service.js';
+import {
+  deleteGeneratedEmoticonByUrl,
+  refreshGeneratedEmoticonSignedUrls,
+} from './storage.service.js';
 
 const EMOTICON_GENERATIONS_TABLE = 'emoticon_generations';
 const STATUS_GENERATING =
@@ -46,11 +50,12 @@ function handleSupabaseError(action, error) {
 }
 
 const MY_GENERATIONS_LIST_COLUMNS =
-  'id, status, saved_to_gallery, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
+  'id, collection_id, status, saved_to_gallery, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
 
 function mapGenerationListItem(row) {
   return {
     id: row.id,
+    collectionId: row.collection_id ?? null,
     status: row.status,
     savedToGallery: row.saved_to_gallery === true,
     originalImageUrl: row.original_image_url,
@@ -68,21 +73,34 @@ function mapGenerationListItem(row) {
 /**
  * 로그인 사용자의 emoticon_generations 목록을 created_at 최신순으로 조회합니다.
  *
- * @param {{ userId: string, page: number, limit: number }} params
+ * @param {{ userId: string, page: number, limit: number, collectionId?: string | null }} params
  * @returns {Promise<{ items: object[], total: number }>}
  */
-export async function listMyGenerations({ userId, page, limit }) {
+export async function listMyGenerations({
+  userId,
+  page,
+  limit,
+  collectionId,
+}) {
   const resolvedUserId = assertNonEmptyString(userId, 'userId');
   const resolvedPage = Number.isInteger(page) && page >= 1 ? page : 1;
   const resolvedLimit = Number.isInteger(limit) && limit >= 1 ? limit : 12;
   const from = (resolvedPage - 1) * resolvedLimit;
   const to = from + resolvedLimit - 1;
 
-  const { data, error, count } = await supabaseAdmin
+  let query = supabaseAdmin
     .from(EMOTICON_GENERATIONS_TABLE)
     .select(MY_GENERATIONS_LIST_COLUMNS, { count: 'exact' })
     .eq('user_id', resolvedUserId)
-    .eq('saved_to_gallery', true)
+    .eq('saved_to_gallery', true);
+
+  if (collectionId === 'uncategorized') {
+    query = query.is('collection_id', null);
+  } else if (typeof collectionId === 'string' && collectionId.trim()) {
+    query = query.eq('collection_id', collectionId.trim());
+  }
+
+  const { data, error, count } = await query
     .order('created_at', { ascending: false })
     .range(from, to);
 
@@ -90,8 +108,19 @@ export async function listMyGenerations({ userId, page, limit }) {
     handleSupabaseError('list', error);
   }
 
+  const items = (data ?? []).map(mapGenerationListItem);
+
+  // DB에 저장된 signed URL은 발급 후 1시간이 지나면 만료되므로,
+  // 조회 시점마다 새 signed URL을 발급해 내려준다. (만료로 갤러리 이미지가 깨지는 문제 방지)
+  const refreshedUrls = await refreshGeneratedEmoticonSignedUrls(
+    items.map((item) => item.generatedImageUrl)
+  );
+  refreshedUrls.forEach((url, index) => {
+    items[index].generatedImageUrl = url;
+  });
+
   return {
-    items: (data ?? []).map(mapGenerationListItem),
+    items,
     total: count ?? 0,
   };
 }
@@ -108,6 +137,7 @@ export async function listMyGenerations({ userId, page, limit }) {
  *   inputText?: string | null,
  *   storyPrompt?: string | null,
  *   finalPrompt: string,
+ *   collectionId?: string | null,
  * }} params
  * @returns {Promise<object>}
  */
@@ -119,13 +149,26 @@ export async function createGeneratingRecord({
   inputText,
   storyPrompt,
   finalPrompt,
+  collectionId,
 }) {
   const resolvedUserId = assertNonEmptyString(userId, 'userId');
+  const resolvedCollectionId =
+    typeof collectionId === 'string' && collectionId.trim()
+      ? collectionId.trim()
+      : null;
+
+  if (resolvedCollectionId) {
+    await assertCollectionOwnership({
+      userId: resolvedUserId,
+      collectionId: resolvedCollectionId,
+    });
+  }
 
   const { data, error } = await supabaseAdmin
     .from(EMOTICON_GENERATIONS_TABLE)
     .insert({
       user_id: resolvedUserId,
+      collection_id: resolvedCollectionId,
       original_image_url: optionalText(originalImageUrl),
       emotion: optionalText(emotion),
       motion: optionalText(motion),
@@ -324,4 +367,57 @@ export async function saveGenerationToGallery({ generationId, userId }) {
     id: data.id,
     savedToGallery: data.saved_to_gallery === true,
   };
+}
+
+/**
+ * 생성 기록을 다른 폴더로 이동하거나 미분류로 되돌립니다.
+ *
+ * @param {{ userId: string, generationId: string, collectionId?: string | null }} params
+ * @returns {Promise<object>}
+ */
+export async function moveGenerationToCollection({
+  userId,
+  generationId,
+  collectionId,
+}) {
+  const resolvedUserId = assertNonEmptyString(userId, 'userId');
+  const resolvedGenerationId = assertNonEmptyString(generationId, 'generationId');
+  const resolvedCollectionId =
+    typeof collectionId === 'string' && collectionId.trim()
+      ? collectionId.trim()
+      : null;
+
+  if (resolvedCollectionId) {
+    await assertCollectionOwnership({
+      userId: resolvedUserId,
+      collectionId: resolvedCollectionId,
+    });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .update({
+      collection_id: resolvedCollectionId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', resolvedGenerationId)
+    .eq('user_id', resolvedUserId)
+    .select(MY_GENERATIONS_LIST_COLUMNS)
+    .single();
+
+  if (error) {
+    handleSupabaseError('move to collection', error);
+  }
+
+  if (!data) {
+    throw createNotFoundError('Generation not found.');
+  }
+
+  const item = mapGenerationListItem(data);
+  const [refreshedUrl] = await refreshGeneratedEmoticonSignedUrls([
+    item.generatedImageUrl,
+  ]);
+  item.generatedImageUrl = refreshedUrl;
+
+  return item;
 }

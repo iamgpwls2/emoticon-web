@@ -4,6 +4,7 @@ import {
   listMyGenerations,
   markGenerationCompleted,
   markGenerationFailed,
+  moveGenerationToCollection,
   saveGenerationToGallery,
 } from '../services/generation.service.js';
 import { generateImageFromPrompt } from '../services/imageGeneration.service.js';
@@ -46,9 +47,18 @@ export async function getMyGenerations(req, res) {
     MAX_LIST_LIMIT,
     parsePositiveInt(req.query.limit, DEFAULT_LIST_LIMIT)
   );
+  const collectionId =
+    typeof req.query.collectionId === 'string' && req.query.collectionId.trim()
+      ? req.query.collectionId.trim()
+      : undefined;
 
   try {
-    const { items, total } = await listMyGenerations({ userId, page, limit });
+    const { items, total } = await listMyGenerations({
+      userId,
+      page,
+      limit,
+      collectionId,
+    });
 
     return res.status(200).json({
       items,
@@ -78,6 +88,7 @@ export async function createGeneration(req, res) {
     inputText,
     storyPrompt,
     finalPrompt,
+    collectionId,
   } = req.body;
 
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
@@ -119,9 +130,15 @@ export async function createGeneration(req, res) {
       inputText,
       storyPrompt,
       finalPrompt: imageGenerationPrompt,
+      collectionId,
     });
   } catch (error) {
     console.error(`createGeneration failed (user=${userId}):`, error.message);
+
+    if (error.isCollectionNotFoundError) {
+      throw HttpError.notFound('폴더를 찾을 수 없습니다.');
+    }
+
     throw HttpError.serverError(
       '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
     );
@@ -181,6 +198,42 @@ export async function createGeneration(req, res) {
 
     throw HttpError.serverError(
       '이모티콘 생성에 실패했습니다. 다시 시도해 주세요.'
+    );
+  }
+}
+
+/**
+ * PATCH /api/generations/:id/collection
+ */
+export async function patchGenerationCollection(req, res) {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const { collectionId } = req.body;
+
+  try {
+    const item = await moveGenerationToCollection({
+      userId,
+      generationId: id,
+      collectionId,
+    });
+
+    return res.status(200).json(item);
+  } catch (error) {
+    console.error(
+      `patchGenerationCollection failed (user=${userId}, generation=${id}):`,
+      error.message
+    );
+
+    if (error.isGenerationNotFoundError) {
+      throw HttpError.notFound('이모티콘을 찾을 수 없습니다.');
+    }
+
+    if (error.isCollectionNotFoundError) {
+      throw HttpError.notFound('폴더를 찾을 수 없습니다.');
+    }
+
+    throw HttpError.serverError(
+      '폴더 이동에 실패했습니다. 다시 시도해 주세요.'
     );
   }
 }

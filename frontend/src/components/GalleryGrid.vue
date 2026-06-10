@@ -12,7 +12,7 @@ defineProps({
   },
   skeletonCount: {
     type: Number,
-    default: 6,
+    default: 8,
   },
   deletingId: {
     type: String,
@@ -30,15 +30,40 @@ defineProps({
     type: Array,
     default: () => [],
   },
+  draggingId: {
+    type: String,
+    default: '',
+  },
+  favoriteIds: {
+    type: Array,
+    default: () => [],
+  },
+  viewMode: {
+    type: String,
+    default: 'grid',
+  },
+  collectionNameById: {
+    type: Object,
+    default: () => ({}),
+  },
 })
 
-defineEmits(['delete', 'toggle-select', 'drag-start'])
+defineEmits([
+  'delete',
+  'toggle-select',
+  'drag-start',
+  'drag-end',
+  'toggle-favorite',
+])
 </script>
 
 <template>
   <div
     class="gallery-grid"
-    :class="{ 'gallery-grid--loading': loading }"
+    :class="{
+      'gallery-grid--loading': loading,
+      'gallery-grid--list': viewMode === 'list',
+    }"
     :aria-busy="loading"
   >
     <template v-if="loading">
@@ -67,11 +92,21 @@ defineEmits(['delete', 'toggle-select', 'drag-start'])
       :status="item.status"
       :selection-mode="selectionMode"
       :selected="selectedIds.includes(item.id)"
+      :dragging="draggingId === item.id"
+      :favorite="favoriteIds.includes(item.id)"
+      :view-mode="viewMode"
+      :folder-name="
+        item.collectionId
+          ? collectionNameById[item.collectionId] ?? ''
+          : ''
+      "
       :deleting="deletingId === item.id"
       :moving="movingIds.includes(item.id)"
       @delete="$emit('delete', $event)"
       @toggle-select="$emit('toggle-select', $event)"
       @drag-start="$emit('drag-start', $event)"
+      @drag-end="$emit('drag-end')"
+      @toggle-favorite="$emit('toggle-favorite', $event)"
     />
   </div>
 </template>
@@ -80,37 +115,54 @@ defineEmits(['delete', 'toggle-select', 'drag-start'])
 .gallery-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 18px;
   width: 100%;
 }
 
-@media (min-width: 641px) {
+@media (min-width: 640px) {
   .gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (min-width: 900px) {
+  .gallery-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1200px) {
+  .gallery-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.gallery-grid--list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .gallery-grid__skeleton {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--code-bg);
+  padding: 14px;
+  border: 1px solid #ece8f7;
+  border-radius: 20px;
+  background: #ffffff;
   box-sizing: border-box;
 }
 
 .gallery-grid__skeleton-image {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 8px;
+  border-radius: 14px;
   background: linear-gradient(
     90deg,
-    var(--social-bg) 25%,
-    var(--border) 50%,
-    var(--social-bg) 75%
+    #faf7ff 25%,
+    #ece8f7 50%,
+    #faf7ff 75%
   );
   background-size: 200% 100%;
   animation: gallery-grid-shimmer 1.2s ease-in-out infinite;
@@ -118,8 +170,8 @@ defineEmits(['delete', 'toggle-select', 'drag-start'])
 
 .gallery-grid__skeleton-line {
   height: 14px;
-  border-radius: 4px;
-  background: var(--social-bg);
+  border-radius: 6px;
+  background: #f1ebff;
 }
 
 .gallery-grid__skeleton-line--short {

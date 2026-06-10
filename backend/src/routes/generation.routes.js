@@ -3,12 +3,15 @@ import {
   createGeneration as createGenerationController,
   deleteGeneration as deleteGenerationController,
   getMyGenerations as getMyGenerationsController,
+  patchGenerationCollection as patchGenerationCollectionController,
   patchGenerationGallery as patchGenerationGalleryController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
 import {
   validateCreateGeneration,
   validateGenerationIdParam,
+  validateListMyGenerationsQuery,
+  validateMoveGenerationCollection,
 } from '../validators/generation.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -21,6 +24,7 @@ const router = Router();
 router.get(
   '/me',
   asyncHandler(requireAuth),
+  validateListMyGenerationsQuery,
   asyncHandler(getMyGenerationsController)
 );
 
@@ -33,6 +37,17 @@ router.post(
   asyncHandler(requireAuth),
   validateCreateGeneration,
   asyncHandler(createGenerationController)
+);
+
+/**
+ * PATCH /api/generations/:id/collection
+ */
+router.patch(
+  '/:id/collection',
+  asyncHandler(requireAuth),
+  validateGenerationIdParam,
+  validateMoveGenerationCollection,
+  asyncHandler(patchGenerationCollectionController)
 );
 
 /**

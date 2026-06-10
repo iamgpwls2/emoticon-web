@@ -47,9 +47,31 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  dragging: {
+    type: Boolean,
+    default: false,
+  },
+  favorite: {
+    type: Boolean,
+    default: false,
+  },
+  viewMode: {
+    type: String,
+    default: 'grid',
+  },
+  folderName: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['delete', 'toggle-select', 'drag-start'])
+const emit = defineEmits([
+  'delete',
+  'toggle-select',
+  'drag-start',
+  'drag-end',
+  'toggle-favorite',
+])
 
 const imageLoadFailed = ref(false)
 
@@ -62,13 +84,13 @@ const formattedCreatedAt = computed(() => {
   const date = new Date(props.createdAt)
   if (Number.isNaN(date.getTime())) return props.createdAt
 
-  return new Intl.DateTimeFormat('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+
+  return `${year}.${month}.${day} ${hour}:${minute}`
 })
 
 const metaLine = computed(() => {
@@ -77,7 +99,7 @@ const metaLine = computed(() => {
 })
 
 const isDraggable = computed(
-  () => props.selectionMode && props.selected && !props.deleting && !props.moving
+  () => !props.deleting && !props.moving && hasImageUrl.value
 )
 
 function onImageError() {
@@ -136,20 +158,32 @@ function handleDragStart(event) {
 
   emit('drag-start', { id: props.id, event })
 }
+
+function handleDragEnd() {
+  emit('drag-end')
+}
+
+function handleToggleFavorite(event) {
+  event.stopPropagation()
+  emit('toggle-favorite', props.id)
+}
 </script>
 
 <template>
   <article
     class="emoticon-card"
     :class="{
+      'emoticon-card--list': viewMode === 'list',
       'emoticon-card--selectable': selectionMode,
       'emoticon-card--selected': selected,
       'emoticon-card--moving': moving,
+      'emoticon-card--dragging': dragging,
     }"
     :data-generation-id="id"
     :draggable="isDraggable"
     @click="handleCardClick"
     @dragstart="handleDragStart"
+    @dragend="handleDragEnd"
   >
     <label
       v-if="selectionMode"
@@ -162,7 +196,6 @@ function handleDragStart(event) {
         :disabled="deleting || moving"
         @change="handleToggleSelect"
       />
-      <span class="emoticon-card__select-text">선택</span>
     </label>
 
     <div class="emoticon-card__preview-wrap">
@@ -175,22 +208,39 @@ function handleDragStart(event) {
         draggable="false"
         @error="onImageError"
       />
-      <p v-else class="emoticon-card__preview-placeholder">
-        {{
-          hasImageUrl && imageLoadFailed
-            ? '이미지를 불러오지 못했습니다.'
-            : status === 'completed'
-              ? '이미지가 없습니다.'
-              : '생성 중이거나 실패한 항목입니다.'
-        }}
-      </p>
+      <div v-else class="emoticon-card__preview-placeholder">
+        <span class="emoticon-card__placeholder-icon" aria-hidden="true">🖼️</span>
+        <p class="emoticon-card__placeholder-text">
+          {{
+            hasImageUrl && imageLoadFailed
+              ? '이미지를 불러오지 못했습니다.'
+              : status === 'completed'
+                ? '이미지가 없습니다.'
+                : '생성 중이거나 실패한 항목입니다.'
+          }}
+        </p>
+      </div>
     </div>
 
     <div class="emoticon-card__body">
-      <p v-if="metaLine" class="emoticon-card__meta">{{ metaLine }}</p>
+      <div class="emoticon-card__meta-row">
+        <p v-if="metaLine" class="emoticon-card__meta">{{ metaLine }}</p>
+        <button
+          type="button"
+          class="emoticon-card__favorite"
+          :class="{ 'emoticon-card__favorite--active': favorite }"
+          :aria-pressed="favorite"
+          :aria-label="favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+          @click="handleToggleFavorite"
+        >
+          {{ favorite ? '★' : '☆' }}
+        </button>
+      </div>
+
       <p v-if="inputText?.trim()" class="emoticon-card__text">
         {{ inputText.trim() }}
       </p>
+
       <time
         v-if="formattedCreatedAt"
         class="emoticon-card__date"
@@ -198,6 +248,16 @@ function handleDragStart(event) {
       >
         {{ formattedCreatedAt }}
       </time>
+
+      <div class="emoticon-card__tags">
+        <span class="emoticon-card__format">PNG</span>
+        <span
+          v-if="folderName?.trim()"
+          class="emoticon-card__format emoticon-card__format--folder"
+        >
+          {{ folderName.trim() }}
+        </span>
+      </div>
     </div>
 
     <div v-if="!selectionMode" class="emoticon-card__actions">
@@ -208,7 +268,7 @@ function handleDragStart(event) {
         :aria-busy="isDownloading"
         @click.stop="handleDownloadClick"
       >
-        {{ isDownloading ? '저장 중...' : 'PNG 저장' }}
+        {{ isDownloading ? '저장 중...' : '저장' }}
       </button>
       <button
         type="button"
@@ -235,19 +295,31 @@ function handleDragStart(event) {
 .emoticon-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--code-bg);
-  box-shadow: var(--shadow);
+  padding: 14px;
+  border: 1px solid #ece8f7;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 14px 35px rgba(80, 60, 160, 0.1);
   box-sizing: border-box;
+  position: relative;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
-    transform 0.2s ease;
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.emoticon-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 42px rgba(80, 60, 160, 0.14);
+}
+
+.emoticon-card--list {
+  flex-direction: row;
+  align-items: stretch;
 }
 
 .emoticon-card--selectable {
@@ -256,27 +328,48 @@ function handleDragStart(event) {
 
 .emoticon-card--selected {
   border-color: #6d3df2;
-  box-shadow: 0 0 0 3px rgba(109, 61, 242, 0.14);
+  box-shadow:
+    0 0 0 3px rgba(109, 61, 242, 0.12),
+    0 14px 35px rgba(80, 60, 160, 0.1);
+}
+
+.emoticon-card--selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(109, 61, 242, 0.06);
+  pointer-events: none;
 }
 
 .emoticon-card--moving {
   opacity: 0.65;
 }
 
-.emoticon-card--selectable[draggable='true'] {
+.emoticon-card--dragging {
+  opacity: 0.6;
+  transform: scale(0.96);
+}
+
+.emoticon-card[draggable='true'] {
   cursor: grab;
 }
 
-.emoticon-card--selectable[draggable='true']:active {
+.emoticon-card[draggable='true']:active {
   cursor: grabbing;
 }
 
 .emoticon-card__select {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: var(--text-h);
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
   cursor: pointer;
 }
 
@@ -289,11 +382,17 @@ function handleDragStart(event) {
 .emoticon-card__preview-wrap {
   width: 100%;
   aspect-ratio: 1;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid #ddd2ff;
+  border-radius: 14px;
   overflow: hidden;
-  background: var(--bg);
+  background: #faf7ff;
   box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.emoticon-card--list .emoticon-card__preview-wrap {
+  width: 120px;
+  aspect-ratio: 1;
 }
 
 .emoticon-card__preview {
@@ -306,18 +405,27 @@ function handleDragStart(event) {
 
 .emoticon-card__preview-placeholder {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   width: 100%;
   height: 100%;
-  margin: 0;
   padding: 16px;
   box-sizing: border-box;
   text-align: center;
+}
+
+.emoticon-card__placeholder-icon {
+  font-size: 28px;
+  opacity: 0.7;
+}
+
+.emoticon-card__placeholder-text {
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--text);
-  background: var(--social-bg);
+  color: #7c86a3;
 }
 
 .emoticon-card__body {
@@ -325,21 +433,46 @@ function handleDragStart(event) {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 auto;
+}
+
+.emoticon-card__meta-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .emoticon-card__meta {
   margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-h);
+  font-size: 15px;
+  font-weight: 700;
+  color: #6d3df2;
   word-break: keep-all;
+}
+
+.emoticon-card__favorite {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #cbb8ff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emoticon-card__favorite--active {
+  color: #6d3df2;
 }
 
 .emoticon-card__text {
   margin: 0;
   font-size: 14px;
   line-height: 1.45;
-  color: var(--text-h);
+  color: #111827;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -348,45 +481,84 @@ function handleDragStart(event) {
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
-  color: var(--text);
+  color: #7c86a3;
+}
+
+.emoticon-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.emoticon-card__format {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1ebff;
+  color: #6d3df2;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.emoticon-card__format--folder {
+  background: #fff4cc;
+  color: #9a6b00;
 }
 
 .emoticon-card__actions {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
   width: 100%;
   min-width: 0;
 }
 
+.emoticon-card--list .emoticon-card__actions {
+  margin-top: auto;
+}
+
 .emoticon-card__download-btn {
-  flex: 1 1 50%;
-  min-width: 0;
+  min-width: 82px;
   min-height: 44px;
   margin: 0;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 12px;
   font-family: var(--sans);
   font-size: 14px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--accent);
-  background: var(--accent-bg);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  word-break: keep-all;
+  color: #6d3df2;
+  background: #f1ebff;
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
-}
-
-.emoticon-card__download-btn:hover:not(:disabled) {
-  border-color: var(--accent-border);
-  box-shadow: var(--shadow);
-}
-
-.emoticon-card__download-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .emoticon-card__download-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.emoticon-card__delete-btn {
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #ffc9d3;
+  border-radius: 12px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  word-break: keep-all;
+  color: #ff4d6d;
+  background: #fff5f7;
+  cursor: pointer;
+}
+
+.emoticon-card__delete-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -395,46 +567,6 @@ function handleDragStart(event) {
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
-  color: #dc2626;
-}
-
-.emoticon-card__delete-btn {
-  flex: 1 1 50%;
-  min-width: 0;
-  min-height: 44px;
-  margin: 0;
-  padding: 10px 14px;
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  border-radius: 8px;
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
-  cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s, opacity 0.2s;
-}
-
-.emoticon-card__delete-btn:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.14);
-  border-color: rgba(220, 38, 38, 0.55);
-}
-
-.emoticon-card__delete-btn:focus-visible {
-  outline: 2px solid #dc2626;
-  outline-offset: 2px;
-}
-
-.emoticon-card__delete-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-@media (max-width: 480px) {
-  .emoticon-card__download-btn,
-  .emoticon-card__delete-btn {
-    font-size: 15px;
-  }
+  color: #ff4d6d;
 }
 </style>

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { env } from './config/env.js';
 import authRoutes from './routes/auth.routes.js';
+import collectionRoutes from './routes/collection.routes.js';
 import generationRoutes from './routes/generation.routes.js';
 import promptRoutes from './routes/prompt.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
@@ -38,6 +39,7 @@ app.get('/api/health', healthHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/prompts', promptRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/collections', collectionRoutes);
 app.use('/api/generations', generationRoutes);
 
 app.use(notFoundHandler);

@@ -1,9 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import CollectionFolderCard from '../components/CollectionFolderCard.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
+import FolderCreateModal from '../components/FolderCreateModal.vue'
 import GalleryGrid from '../components/GalleryGrid.vue'
+import GallerySidebar from '../components/GallerySidebar.vue'
+import GalleryToast from '../components/GalleryToast.vue'
+import { useFavorites } from '../composables/useFavorites.js'
 import {
   createCollection,
   deleteCollection,
@@ -21,11 +24,12 @@ import { toUserErrorMessage } from '../utils/apiError.js'
 const DRAG_MIME_TYPE = 'application/x-emoticon-ids'
 const PAGE_LIMIT = 12
 const COLLECTION_NAME_MAX_LENGTH = 50
+const TOAST_DURATION_MS = 3000
 
 const collections = ref([])
 const uncategorizedCount = ref(0)
 
-const activeFilter = ref('uncategorized')
+const selectedFolderId = ref('all')
 const items = ref([])
 const page = ref(1)
 const hasMore = ref(false)
@@ -42,13 +46,25 @@ const movingIds = ref([])
 
 const selectionMode = ref(false)
 const selectedIds = ref([])
+const draggedImageId = ref('')
+const isDragging = ref(false)
 const dragOverFolderId = ref('')
 
-const showCreateFolderForm = ref(false)
-const newFolderName = ref('')
+const showCreateFolderModal = ref(false)
 const isCreatingFolder = ref(false)
-const renameFolderName = ref('')
 const isRenamingFolder = ref(false)
+const isEditingFolderName = ref(false)
+const editFolderName = ref('')
+
+const sortOrder = ref('newest')
+const viewMode = ref('grid')
+
+const toastMessage = ref('')
+const toastVisible = ref(false)
+let toastTimerId = null
+
+const { favoriteIds, favoriteCount, toggleFavorite, filterFavoriteItems } =
+  useFavorites()
 
 const totalImageCount = computed(
   () =>
@@ -62,35 +78,122 @@ const totalImageCount = computed(
 const selectedCount = computed(() => selectedIds.value.length)
 
 const activeCollection = computed(() =>
-  activeFilter.value.startsWith('collection:')
+  selectedFolderId.value.startsWith('collection:')
     ? collections.value.find(
-        (collection) => collection.id === activeFilter.value.slice('collection:'.length)
+        (collection) =>
+          collection.id === selectedFolderId.value.slice('collection:'.length)
       ) ?? null
     : null
 )
 
 const activeCollectionId = computed(() => activeCollection.value?.id ?? '')
 
+const customFolders = computed(() =>
+  collections.value.map((collection) => ({
+    id: collection.id,
+    name: collection.name,
+    itemCount: collection.itemCount ?? 0,
+  }))
+)
+
+const collectionNameById = computed(() =>
+  Object.fromEntries(
+    collections.value.map((collection) => [collection.id, collection.name])
+  )
+)
+
+const existingFolderNames = computed(() => [
+  '전체 이미지',
+  '즐겨찾기',
+  '미분류',
+  ...collections.value.map((collection) => collection.name),
+])
+
 const filterTitle = computed(() => {
-  if (activeFilter.value === 'uncategorized') return '미분류'
+  if (selectedFolderId.value === 'all') return '전체 이미지'
+  if (selectedFolderId.value === 'favorite') return '즐겨찾기'
+  if (selectedFolderId.value === 'uncategorized') return '미분류'
   if (activeCollection.value) return activeCollection.value.name
   return '갤러리'
 })
 
-const hasAnyImages = computed(() => totalImageCount.value > 0)
+const filterDescription = computed(() => {
+  if (activeCollection.value?.description?.trim()) {
+    return activeCollection.value.description.trim()
+  }
+  return '설명 없음'
+})
+
+const folderItemCount = computed(() => {
+  if (selectedFolderId.value === 'all') return totalImageCount.value
+  if (selectedFolderId.value === 'favorite') return favoriteCount.value
+  if (selectedFolderId.value === 'uncategorized') return uncategorizedCount.value
+  if (activeCollection.value) return activeCollection.value.itemCount ?? 0
+  return total.value
+})
+
+const sortedItems = computed(() => {
+  const list = [...items.value]
+
+  if (sortOrder.value === 'oldest') {
+    return list.reverse()
+  }
+
+  if (sortOrder.value === 'name') {
+    return list.sort((a, b) => {
+      const nameA = [a.emotion, a.motion, a.inputText]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      const nameB = [b.emotion, b.motion, b.inputText]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return nameA.localeCompare(nameB, 'ko')
+    })
+  }
+
+  return list
+})
+
+const displayItems = computed(() => {
+  if (selectedFolderId.value !== 'favorite') {
+    return sortedItems.value
+  }
+  return filterFavoriteItems(sortedItems.value)
+})
+
+const hasAnyImages = computed(
+  () => totalImageCount.value > 0 || items.value.length > 0
+)
 
 const isInitialLoading = () => isLoading.value && items.value.length === 0
 const isEmpty = () =>
-  !isLoading.value && !errorMessage.value && items.value.length === 0
+  !isLoading.value && !errorMessage.value && displayItems.value.length === 0
 const isSuccess = () =>
-  !isLoading.value && !errorMessage.value && items.value.length > 0
+  !isLoading.value && !errorMessage.value && displayItems.value.length > 0
+
+const dropEnabled = computed(() => isDragging.value)
 
 function resolveCollectionIdForFetch() {
-  if (activeFilter.value === 'uncategorized') return 'uncategorized'
-  if (activeFilter.value.startsWith('collection:')) {
-    return activeFilter.value.slice('collection:'.length)
+  if (selectedFolderId.value === 'uncategorized') return 'uncategorized'
+  if (selectedFolderId.value.startsWith('collection:')) {
+    return selectedFolderId.value.slice('collection:'.length)
   }
   return undefined
+}
+
+function showToast(message) {
+  toastMessage.value = message
+  toastVisible.value = true
+
+  if (toastTimerId) {
+    clearTimeout(toastTimerId)
+  }
+
+  toastTimerId = setTimeout(() => {
+    toastVisible.value = false
+  }, TOAST_DURATION_MS)
 }
 
 async function loadCollections() {
@@ -152,18 +255,26 @@ async function refreshGallery({ resetPage = true } = {}) {
   await loadImages({ nextPage: page.value, append: false })
 }
 
-function setFilter(filterKey) {
-  activeFilter.value = filterKey
+function selectFolder(folderId) {
+  if (folderId.startsWith('collection:') || folderId === 'uncategorized') {
+    selectedFolderId.value = folderId
+  } else if (folderId === 'all' || folderId === 'favorite') {
+    selectedFolderId.value = folderId
+  } else {
+    selectedFolderId.value = `collection:${folderId}`
+  }
+
   page.value = 1
   deleteErrorMessage.value = ''
   folderActionErrorMessage.value = ''
   clearSelection()
+  isEditingFolderName.value = false
 
-  if (filterKey.startsWith('collection:')) {
+  if (selectedFolderId.value.startsWith('collection:')) {
     const collection = collections.value.find(
-      (item) => item.id === filterKey.slice('collection:'.length)
+      (item) => item.id === selectedFolderId.value.slice('collection:'.length)
     )
-    renameFolderName.value = collection?.name ?? ''
+    editFolderName.value = collection?.name ?? ''
   }
 
   loadImages({ nextPage: 1, append: false })
@@ -192,6 +303,9 @@ function toggleSelect(generationId) {
 }
 
 function handleCardDragStart({ id, event }) {
+  draggedImageId.value = id
+  isDragging.value = true
+
   const dragIds = selectedIds.value.includes(id)
     ? [...selectedIds.value]
     : [id]
@@ -200,6 +314,12 @@ function handleCardDragStart({ id, event }) {
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
   }
+}
+
+function handleCardDragEnd() {
+  draggedImageId.value = ''
+  isDragging.value = false
+  dragOverFolderId.value = ''
 }
 
 function parseDraggedIds(event) {
@@ -216,20 +336,32 @@ function parseDraggedIds(event) {
   }
 }
 
-function handleFolderDragEnter(collectionId) {
-  if (!selectionMode.value) return
-  dragOverFolderId.value = collectionId
-}
-
-function handleFolderDragLeave(collectionId) {
-  if (dragOverFolderId.value === collectionId) {
-    dragOverFolderId.value = ''
+function resolveDropFolderId(folderId) {
+  if (folderId === 'uncategorized') return null
+  if (folderId.startsWith('collection:')) {
+    return folderId.slice('collection:'.length)
   }
+  return folderId
 }
 
-async function moveGenerationsToUncategorized(generationIds) {
-  for (const generationId of generationIds) {
-    await moveGenerationToCollection(generationId, null)
+function getFolderDisplayName(folderId) {
+  if (folderId === 'uncategorized') return '미분류'
+  if (folderId.startsWith('collection:')) {
+    const id = folderId.slice('collection:'.length)
+    return collections.value.find((item) => item.id === id)?.name ?? '폴더'
+  }
+  const folder = collections.value.find((item) => item.id === folderId)
+  return folder?.name ?? '폴더'
+}
+
+function handleFolderDragEnter(folderId) {
+  if (!isDragging.value) return
+  dragOverFolderId.value = folderId
+}
+
+function handleFolderDragLeave(folderId) {
+  if (dragOverFolderId.value === folderId) {
+    dragOverFolderId.value = ''
   }
 }
 
@@ -241,13 +373,20 @@ async function moveSelectedGenerations(generationIds, collectionId) {
     if (collectionId) {
       await moveGenerationsToCollection(generationIds, collectionId)
     } else {
-      await moveGenerationsToUncategorized(generationIds)
+      for (const generationId of generationIds) {
+        await moveGenerationToCollection(generationId, null)
+      }
     }
 
     items.value = items.value.filter((item) => !generationIds.includes(item.id))
     total.value = Math.max(0, total.value - generationIds.length)
     clearSelection()
     await loadCollections()
+
+    const folderLabel = collectionId
+      ? getFolderDisplayName(`collection:${collectionId}`)
+      : '미분류'
+    showToast(`이미지를 ${folderLabel} 폴더로 이동했어요.`)
   } catch (err) {
     folderActionErrorMessage.value = toUserErrorMessage(
       err,
@@ -258,61 +397,30 @@ async function moveSelectedGenerations(generationIds, collectionId) {
   }
 }
 
-async function handleDropOnFolder(collectionId, event) {
+async function handleFolderDrop({ folderId, event }) {
   dragOverFolderId.value = ''
 
-  if (!selectionMode.value) return
+  if (!isDragging.value) return
 
   const generationIds = parseDraggedIds(event)
   if (generationIds.length === 0) return
 
+  const collectionId = resolveDropFolderId(folderId)
   await moveSelectedGenerations(generationIds, collectionId)
 }
 
-async function handleDropOnUncategorized(event) {
-  dragOverFolderId.value = ''
-
-  if (!selectionMode.value) return
-
-  event.preventDefault()
-  const generationIds = parseDraggedIds(event)
-  if (generationIds.length === 0) return
-
-  await moveSelectedGenerations(generationIds, null)
-}
-
-function handleUncategorizedDragEnter() {
-  if (!selectionMode.value) return
-  dragOverFolderId.value = 'uncategorized'
-}
-
-function handleUncategorizedDragOver(event) {
-  if (!selectionMode.value) return
-  event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move'
-  }
-}
-
-function handleUncategorizedDragLeave() {
-  if (dragOverFolderId.value === 'uncategorized') {
-    dragOverFolderId.value = ''
-  }
-}
-
-function openCreateFolderForm() {
-  showCreateFolderForm.value = true
-  newFolderName.value = ''
+function openCreateFolderModal() {
+  showCreateFolderModal.value = true
   folderActionErrorMessage.value = ''
 }
 
-function closeCreateFolderForm() {
-  showCreateFolderForm.value = false
-  newFolderName.value = ''
+function closeCreateFolderModal() {
+  if (isCreatingFolder.value) return
+  showCreateFolderModal.value = false
 }
 
-async function handleCreateFolder() {
-  const trimmedName = newFolderName.value.trim()
+async function handleCreateFolder(name) {
+  const trimmedName = name.trim()
   if (!trimmedName || isCreatingFolder.value) return
 
   if (trimmedName.length > COLLECTION_NAME_MAX_LENGTH) {
@@ -326,7 +434,9 @@ async function handleCreateFolder() {
   try {
     const created = await createCollection(trimmedName)
     collections.value = [created, ...collections.value]
-    closeCreateFolderForm()
+    showCreateFolderModal.value = false
+    selectFolder(created.id)
+    showToast(`「${created.name}」 폴더가 생성되었습니다.`)
   } catch (err) {
     folderActionErrorMessage.value = toUserErrorMessage(
       err,
@@ -337,10 +447,21 @@ async function handleCreateFolder() {
   }
 }
 
+function startRenameFolder() {
+  if (!activeCollection.value) return
+  editFolderName.value = activeCollection.value.name
+  isEditingFolderName.value = true
+}
+
+function cancelRenameFolder() {
+  isEditingFolderName.value = false
+  editFolderName.value = activeCollection.value?.name ?? ''
+}
+
 async function handleRenameFolder() {
   if (!activeCollectionId.value || isRenamingFolder.value) return
 
-  const trimmedName = renameFolderName.value.trim()
+  const trimmedName = editFolderName.value.trim()
   if (!trimmedName) return
 
   if (trimmedName.length > COLLECTION_NAME_MAX_LENGTH) {
@@ -356,7 +477,9 @@ async function handleRenameFolder() {
     collections.value = collections.value.map((collection) =>
       collection.id === updated.id ? { ...collection, ...updated } : collection
     )
-    renameFolderName.value = updated.name
+    editFolderName.value = updated.name
+    isEditingFolderName.value = false
+    showToast('폴더 이름이 변경되었습니다.')
   } catch (err) {
     folderActionErrorMessage.value = toUserErrorMessage(
       err,
@@ -367,14 +490,22 @@ async function handleRenameFolder() {
   }
 }
 
-async function handleDeleteFolder() {
-  if (!activeCollection.value) return
+async function handleSidebarRename({ folderId, name }) {
+  editFolderName.value = name
+  selectedFolderId.value = `collection:${folderId}`
+  await handleRenameFolder()
+}
 
-  const itemCount = activeCollection.value.itemCount ?? 0
+async function handleDeleteFolder(folderId) {
+  const collection =
+    collections.value.find((item) => item.id === folderId) ?? activeCollection.value
+  if (!collection) return
+
+  const itemCount = collection.itemCount ?? 0
   const message =
     itemCount > 0
-      ? `「${activeCollection.value.name}」 폴더를 삭제할까요?\n\n이미지 ${itemCount}개는 미분류로 이동합니다.`
-      : `「${activeCollection.value.name}」 폴더를 삭제할까요?`
+      ? `「${collection.name}」 폴더를 삭제할까요?\n\n이미지 ${itemCount}개는 미분류로 이동합니다.`
+      : `「${collection.name}」 폴더를 삭제할까요?`
 
   if (!window.confirm(message)) return
 
@@ -385,11 +516,10 @@ async function handleDeleteFolder() {
   folderActionErrorMessage.value = ''
 
   try {
-    await deleteCollection(activeCollection.value.id, {
-      cascade: deleteImagesToo,
-    })
-    activeFilter.value = 'uncategorized'
+    await deleteCollection(collection.id, { cascade: deleteImagesToo })
+    selectedFolderId.value = 'uncategorized'
     await refreshGallery()
+    showToast('폴더가 삭제되었습니다.')
   } catch (err) {
     folderActionErrorMessage.value = toUserErrorMessage(
       err,
@@ -420,6 +550,13 @@ async function handleDelete(generationId) {
   }
 }
 
+function handleToggleFavorite(generationId) {
+  const added = toggleFavorite(generationId)
+  if (added) {
+    showToast('즐겨찾기에 추가했습니다.')
+  }
+}
+
 function handleRetry() {
   refreshGallery()
 }
@@ -430,519 +567,499 @@ function handleLoadMore() {
 
 onMounted(async () => {
   await loadCollections()
-
-  if (uncategorizedCount.value === 0 && collections.value.length > 0) {
-    const firstCollection = collections.value[0]
-    activeFilter.value = `collection:${firstCollection.id}`
-    renameFolderName.value = firstCollection.name
-  }
-
   await loadImages({ nextPage: 1, append: false })
+
+  showToast('드래그 & 드롭으로 폴더를 이동할 수 있어요!')
 })
 </script>
 
 <template>
-  <section class="gallery-page">
-    <div class="gallery-page__card">
-      <header class="gallery-page__header">
-        <h1>내 이모티콘 갤러리</h1>
-        <p class="gallery-page__lead">
-          생성한 이모티콘을 폴더로 정리할 수 있습니다.
-          <span v-if="hasAnyImages" class="gallery-page__count">
-            총 {{ totalImageCount }}개
-          </span>
-        </p>
-      </header>
+  <section class="gallery-page gallery-page--explorer">
+    <div class="gallery-page__layout">
+      <GallerySidebar
+        class="gallery-page__sidebar gallery-page__sidebar--desktop"
+        :selected-folder-id="selectedFolderId"
+        :all-count="totalImageCount"
+        :favorite-count="favoriteCount"
+        :uncategorized-count="uncategorizedCount"
+        :custom-folders="customFolders"
+        :drag-over-folder-id="dragOverFolderId"
+        :drop-enabled="dropEnabled"
+        @select-folder="selectFolder"
+        @create-folder="openCreateFolderModal"
+        @folder-drag-enter="handleFolderDragEnter"
+        @folder-drag-leave="handleFolderDragLeave"
+        @folder-drop="handleFolderDrop"
+        @rename-folder="handleSidebarRename"
+        @delete-folder="handleDeleteFolder"
+      />
 
-      <template v-if="hasAnyImages">
-        <div class="gallery-page__toolbar">
+      <div class="gallery-page__main">
+        <div class="gallery-page__mobile-folders" aria-label="폴더 선택">
           <button
             type="button"
-            class="gallery-page__toolbar-btn"
-            :class="{ 'gallery-page__toolbar-btn--active': selectionMode }"
-            @click="toggleSelectionMode"
+            class="gallery-page__folder-chip"
+            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === 'all' }"
+            @click="selectFolder('all')"
           >
-            {{ selectionMode ? '선택 취소' : '이미지 선택' }}
+            전체 {{ totalImageCount }}
           </button>
-
           <button
             type="button"
-            class="gallery-page__toolbar-btn gallery-page__toolbar-btn--primary"
-            @click="openCreateFolderForm"
+            class="gallery-page__folder-chip"
+            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === 'favorite' }"
+            @click="selectFolder('favorite')"
           >
-            폴더 만들기
+            즐겨찾기 {{ favoriteCount }}
           </button>
-        </div>
-
-        <p
-          v-if="selectionMode"
-          class="gallery-page__selection-hint"
-          role="status"
-        >
-          <template v-if="selectedCount > 0">
-            {{ selectedCount }}개 선택됨 — 폴더로 끌어다 놓으면 이동합니다.
-          </template>
-          <template v-else>
-            이동할 이미지를 선택한 뒤, 폴더로 끌어다 놓으세요.
-          </template>
-        </p>
-
-        <form
-          v-if="showCreateFolderForm"
-          class="gallery-page__create-folder"
-          @submit.prevent="handleCreateFolder"
-        >
-          <label for="new-folder-name" class="gallery-page__create-label">
-            새 폴더 이름
-          </label>
-          <div class="gallery-page__create-row">
-            <input
-              id="new-folder-name"
-              v-model="newFolderName"
-              type="text"
-              class="gallery-page__create-input"
-              maxlength="50"
-              placeholder="예: 토끼 이모티콘"
-              :disabled="isCreatingFolder"
-            />
-            <button
-              type="submit"
-              class="gallery-page__create-btn"
-              :disabled="isCreatingFolder || !newFolderName.trim()"
-            >
-              {{ isCreatingFolder ? '만드는 중...' : '만들기' }}
-            </button>
-            <button
-              type="button"
-              class="gallery-page__cancel-btn"
-              :disabled="isCreatingFolder"
-              @click="closeCreateFolderForm"
-            >
-              취소
-            </button>
-          </div>
-        </form>
-
-        <ErrorMessage :message="folderActionErrorMessage" variant="error" />
-
-        <div class="gallery-page__folder-strip">
           <button
             type="button"
-            class="gallery-page__filter-btn"
+            class="gallery-page__folder-chip"
+            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === 'uncategorized' }"
+            @click="selectFolder('uncategorized')"
+          >
+            미분류 {{ uncategorizedCount }}
+          </button>
+          <button
+            v-for="folder in customFolders"
+            :key="folder.id"
+            type="button"
+            class="gallery-page__folder-chip"
             :class="{
-              'gallery-page__filter-btn--active': activeFilter === 'uncategorized',
-              'gallery-page__filter-btn--drop-highlight':
-                dragOverFolderId === 'uncategorized',
+              'gallery-page__folder-chip--active':
+                selectedFolderId === `collection:${folder.id}`,
             }"
-            @click="setFilter('uncategorized')"
-            @dragover="handleUncategorizedDragOver"
-            @dragenter.prevent="handleUncategorizedDragEnter"
-            @dragleave="handleUncategorizedDragLeave"
-            @drop="handleDropOnUncategorized"
+            @click="selectFolder(folder.id)"
           >
-            미분류
-            <span class="gallery-page__filter-count">{{ uncategorizedCount }}</span>
+            {{ folder.name }} {{ folder.itemCount }}
           </button>
-
-          <CollectionFolderCard
-            v-for="collection in collections"
-            :key="collection.id"
-            :name="collection.name"
-            :item-count="collection.itemCount ?? 0"
-            :cover-image-url="collection.coverImageUrl || ''"
-            :active="activeFilter === `collection:${collection.id}`"
-            :drop-enabled="selectionMode"
-            :drop-highlight="dragOverFolderId === collection.id"
-            @open="setFilter(`collection:${collection.id}`)"
-            @drag-enter="handleFolderDragEnter(collection.id)"
-            @drag-leave="handleFolderDragLeave(collection.id)"
-            @drop="handleDropOnFolder(collection.id, $event)"
-          />
         </div>
 
-        <div
-          v-if="activeCollection"
-          class="gallery-page__folder-manage"
-        >
-          <div class="gallery-page__rename-row">
-            <input
-              v-model="renameFolderName"
-              type="text"
-              class="gallery-page__rename-input"
-              maxlength="50"
-              :disabled="isRenamingFolder"
-            />
-            <button
-              type="button"
-              class="gallery-page__rename-btn"
-              :disabled="isRenamingFolder || !renameFolderName.trim()"
-              @click="handleRenameFolder"
-            >
-              {{ isRenamingFolder ? '변경 중...' : '이름 변경' }}
+        <div class="gallery-page__panel">
+          <header class="gallery-page__main-header">
+            <div class="gallery-page__folder-info">
+              <div class="gallery-page__folder-title-row">
+                <span class="gallery-page__folder-icon" aria-hidden="true">📁</span>
+
+                <template v-if="isEditingFolderName && activeCollection">
+                  <input
+                    v-model="editFolderName"
+                    type="text"
+                    class="gallery-page__folder-name-input"
+                    maxlength="50"
+                    :disabled="isRenamingFolder"
+                    @keydown.enter.prevent="handleRenameFolder"
+                  />
+                </template>
+                <h1 v-else class="gallery-page__folder-title">
+                  {{ filterTitle }}
+                </h1>
+
+                <button
+                  v-if="activeCollection && !isEditingFolderName"
+                  type="button"
+                  class="gallery-page__icon-btn"
+                  aria-label="폴더 이름 수정"
+                  @click="startRenameFolder"
+                >
+                  ✎
+                </button>
+                <template v-else-if="isEditingFolderName">
+                  <button
+                    type="button"
+                    class="gallery-page__icon-btn"
+                    :disabled="isRenamingFolder"
+                    @click="handleRenameFolder"
+                  >
+                    저장
+                  </button>
+                  <button
+                    type="button"
+                    class="gallery-page__icon-btn"
+                    :disabled="isRenamingFolder"
+                    @click="cancelRenameFolder"
+                  >
+                    취소
+                  </button>
+                </template>
+
+                <span class="gallery-page__folder-count">{{ folderItemCount }}개</span>
+              </div>
+
+              <p class="gallery-page__folder-desc">{{ filterDescription }}</p>
+            </div>
+
+            <div class="gallery-page__controls">
+              <button
+                type="button"
+                class="gallery-page__control-btn"
+                :class="{ 'gallery-page__control-btn--active': selectionMode }"
+                @click="toggleSelectionMode"
+              >
+                {{ selectionMode ? '선택 취소' : '선택' }}
+              </button>
+
+              <label class="gallery-page__sort">
+                <span class="gallery-page__sort-label">정렬:</span>
+                <select v-model="sortOrder" class="gallery-page__sort-select">
+                  <option value="newest">최신순</option>
+                  <option value="oldest">오래된순</option>
+                  <option value="name">이름순</option>
+                </select>
+              </label>
+
+              <div class="gallery-page__view-toggle" role="group" aria-label="보기 전환">
+                <button
+                  type="button"
+                  class="gallery-page__view-btn"
+                  :class="{ 'gallery-page__view-btn--active': viewMode === 'grid' }"
+                  aria-label="그리드 보기"
+                  @click="viewMode = 'grid'"
+                >
+                  ▦
+                </button>
+                <button
+                  type="button"
+                  class="gallery-page__view-btn"
+                  :class="{ 'gallery-page__view-btn--active': viewMode === 'list' }"
+                  aria-label="리스트 보기"
+                  @click="viewMode = 'list'"
+                >
+                  ☰
+                </button>
+              </div>
+
+              <button
+                v-if="activeCollection"
+                type="button"
+                class="gallery-page__control-btn gallery-page__control-btn--danger"
+                @click="handleDeleteFolder(activeCollection.id)"
+              >
+                폴더 삭제
+              </button>
+            </div>
+          </header>
+
+          <ErrorMessage :message="folderActionErrorMessage" variant="error" />
+
+          <p
+            v-if="selectionMode"
+            class="gallery-page__selection-hint"
+            role="status"
+          >
+            <template v-if="selectedCount > 0">
+              {{ selectedCount }}개 선택됨 — 사이드바 폴더로 끌어다 놓으면 이동합니다.
+            </template>
+            <template v-else>
+              이동할 이미지를 선택하거나, 카드를 바로 드래그해 보세요.
+            </template>
+          </p>
+
+          <p
+            v-if="isInitialLoading()"
+            class="gallery-page__loading-text"
+            role="status"
+            aria-live="polite"
+          >
+            이모티콘 목록을 불러오는 중입니다...
+          </p>
+
+          <GalleryGrid v-if="isInitialLoading()" :loading="true" />
+
+          <div v-else-if="errorMessage" class="gallery-page__error">
+            <ErrorMessage :message="errorMessage" variant="error" />
+            <button type="button" class="gallery-page__retry-btn" @click="handleRetry">
+              다시 시도
             </button>
           </div>
-          <button
-            type="button"
-            class="gallery-page__delete-folder-btn"
-            @click="handleDeleteFolder"
-          >
-            폴더 삭제
-          </button>
+
+          <div v-else-if="!hasAnyImages" class="gallery-page__empty">
+            <p class="gallery-page__empty-text">
+              아직 생성한 이모티콘이 없습니다.
+            </p>
+            <RouterLink to="/generate" class="gallery-page__create-link">
+              이모티콘 만들러 가기
+            </RouterLink>
+          </div>
+
+          <div v-else-if="isEmpty()" class="gallery-page__empty">
+            <p class="gallery-page__empty-text">
+              {{
+                selectedFolderId === 'favorite'
+                  ? '즐겨찾기한 이미지가 없습니다. 카드의 별 아이콘을 눌러 추가해 보세요.'
+                  : selectedFolderId === 'uncategorized'
+                    ? '미분류 이미지가 없습니다.'
+                    : '이 폴더가 비어 있습니다. 다른 폴더에서 이미지를 끌어다 놓아 보세요.'
+              }}
+            </p>
+          </div>
+
+          <template v-else-if="isSuccess()">
+            <ErrorMessage
+              v-if="deleteErrorMessage"
+              :message="deleteErrorMessage"
+              variant="error"
+            />
+
+            <GalleryGrid
+              :items="displayItems"
+              :collection-name-by-id="collectionNameById"
+              :selection-mode="selectionMode"
+              :selected-ids="selectedIds"
+              :deleting-id="deletingId"
+              :moving-ids="movingIds"
+              :dragging-id="draggedImageId"
+              :favorite-ids="favoriteIds"
+              :view-mode="viewMode"
+              @delete="handleDelete"
+              @toggle-select="toggleSelect"
+              @drag-start="handleCardDragStart"
+              @drag-end="handleCardDragEnd"
+              @toggle-favorite="handleToggleFavorite"
+            />
+
+            <p class="gallery-page__item-count">{{ displayItems.length }}개 항목</p>
+
+            <div v-if="hasMore && selectedFolderId !== 'favorite'" class="gallery-page__load-more">
+              <button
+                type="button"
+                class="gallery-page__load-more-btn"
+                :disabled="isLoadingMore"
+                @click="handleLoadMore"
+              >
+                {{ isLoadingMore ? '불러오는 중...' : '더 보기' }}
+              </button>
+            </div>
+          </template>
         </div>
-      </template>
-
-      <h2 class="gallery-page__section-title">{{ filterTitle }}</h2>
-
-      <p
-        v-if="isInitialLoading()"
-        class="gallery-page__loading-text"
-        role="status"
-        aria-live="polite"
-      >
-        이모티콘 목록을 불러오는 중입니다...
-      </p>
-
-      <GalleryGrid v-if="isInitialLoading()" :loading="true" />
-
-      <div v-else-if="errorMessage" class="gallery-page__error">
-        <ErrorMessage :message="errorMessage" variant="error" />
-        <button
-          type="button"
-          class="gallery-page__retry-btn"
-          @click="handleRetry"
-        >
-          다시 시도
-        </button>
       </div>
-
-      <div v-else-if="!hasAnyImages" class="gallery-page__empty">
-        <p class="gallery-page__empty-text">
-          아직 생성한 이모티콘이 없습니다.
-        </p>
-        <RouterLink to="/generate" class="gallery-page__create-link">
-          이모티콘 만들러 가기
-        </RouterLink>
-      </div>
-
-      <div v-else-if="isEmpty()" class="gallery-page__empty">
-        <p class="gallery-page__empty-text">
-          {{
-            activeFilter === 'uncategorized'
-              ? '미분류 이미지가 없습니다. 폴더를 열어 내용을 확인해 보세요.'
-              : '이 폴더가 비어 있습니다. 미분류에서 이미지를 선택해 끌어다 놓으세요.'
-          }}
-        </p>
-        <button
-          v-if="activeFilter !== 'uncategorized'"
-          type="button"
-          class="gallery-page__retry-btn"
-          @click="setFilter('uncategorized')"
-        >
-          미분류 보기
-        </button>
-      </div>
-
-      <template v-else-if="isSuccess()">
-        <ErrorMessage
-          v-if="deleteErrorMessage"
-          :message="deleteErrorMessage"
-          variant="error"
-        />
-
-        <GalleryGrid
-          :items="items"
-          :selection-mode="selectionMode"
-          :selected-ids="selectedIds"
-          :deleting-id="deletingId"
-          :moving-ids="movingIds"
-          @delete="handleDelete"
-          @toggle-select="toggleSelect"
-          @drag-start="handleCardDragStart"
-        />
-
-        <div v-if="hasMore" class="gallery-page__load-more">
-          <button
-            type="button"
-            class="gallery-page__load-more-btn"
-            :disabled="isLoadingMore"
-            @click="handleLoadMore"
-          >
-            {{ isLoadingMore ? '불러오는 중...' : '더 보기' }}
-          </button>
-        </div>
-      </template>
     </div>
+
+    <FolderCreateModal
+      :open="showCreateFolderModal"
+      :existing-names="existingFolderNames"
+      :loading="isCreatingFolder"
+      @close="closeCreateFolderModal"
+      @create="handleCreateFolder"
+    />
+
+    <GalleryToast :message="toastMessage" :visible="toastVisible" />
   </section>
 </template>
 
 <style scoped>
-.gallery-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-grow: 1;
+.gallery-page--explorer {
   width: 100%;
+  min-height: 100%;
+  padding: 24px 20px 40px;
+  background: #f7f4ff;
   box-sizing: border-box;
-  padding: 32px 20px;
-  text-align: left;
 }
 
-.gallery-page__card {
-  width: 100%;
-  max-width: 480px;
+.gallery-page__layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 300px) minmax(0, 1fr);
+  gap: 20px;
+  width: min(1280px, 100%);
+  margin-inline: auto;
+}
+
+.gallery-page__main {
+  min-width: 0;
+}
+
+.gallery-page__panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #e8e2f8;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 14px 35px rgba(80, 60, 160, 0.08);
+  box-sizing: border-box;
 }
 
-@media (min-width: 641px) {
-  .gallery-page__card {
-    max-width: 960px;
-  }
+.gallery-page__main-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.gallery-page__header h1 {
-  margin: 0 0 12px;
-  font-size: 36px;
-  text-align: center;
-  color: var(--text-h);
+.gallery-page__folder-info {
+  min-width: 0;
 }
 
-.gallery-page__lead {
+.gallery-page__folder-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.gallery-page__folder-icon {
+  font-size: 22px;
+}
+
+.gallery-page__folder-title {
   margin: 0;
-  text-align: center;
-  line-height: 1.5;
-  color: var(--text);
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 800;
+  color: #111827;
 }
 
-.gallery-page__count {
-  display: block;
-  margin-top: 6px;
+.gallery-page__folder-name-input {
+  min-width: 180px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid #e8e2f8;
+  border-radius: 10px;
+  background: #fbf8ff;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.gallery-page__folder-count {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1ebff;
+  color: #6d3df2;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.gallery-page__folder-desc {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #7c86a3;
+}
+
+.gallery-page__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.gallery-page__control-btn,
+.gallery-page__retry-btn,
+.gallery-page__load-more-btn,
+.gallery-page__create-link {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid #e8e2f8;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #111827;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.gallery-page__control-btn--active {
+  border-color: #6d3df2;
+  background: #f2ecff;
+  color: #6d3df2;
+}
+
+.gallery-page__control-btn--danger {
+  color: #ff4d6d;
+  border-color: #ffc9d3;
+  background: #fff5f7;
+}
+
+.gallery-page__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gallery-page__sort-label {
+  font-size: 14px;
+  color: #7c86a3;
+}
+
+.gallery-page__sort-select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #e8e2f8;
+  border-radius: 12px;
+  background: #fbf8ff;
+  color: #111827;
+  font: inherit;
   font-size: 14px;
 }
 
-.gallery-page__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  width: 100%;
+.gallery-page__view-toggle {
+  display: inline-flex;
+  border: 1px solid #e8e2f8;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.gallery-page__toolbar-btn {
-  flex: 1 1 140px;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-h);
-  background: var(--bg);
+.gallery-page__view-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: #ffffff;
+  color: #7c86a3;
+  font-size: 16px;
   cursor: pointer;
 }
 
-.gallery-page__toolbar-btn--primary {
-  color: var(--accent);
-  background: var(--accent-bg);
-  border-color: transparent;
+.gallery-page__view-btn--active {
+  background: #f2ecff;
+  color: #6d3df2;
 }
 
-.gallery-page__toolbar-btn--active {
-  border-color: #6d3df2;
+.gallery-page__icon-btn {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #e8e2f8;
+  border-radius: 10px;
+  background: #fbf8ff;
   color: #6d3df2;
-  background: rgba(109, 61, 242, 0.08);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .gallery-page__selection-hint {
   margin: 0;
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 14px;
   line-height: 1.5;
   color: #6d3df2;
-  background: rgba(109, 61, 242, 0.08);
-  border: 1px solid rgba(109, 61, 242, 0.18);
-}
-
-.gallery-page__create-folder,
-.gallery-page__folder-manage {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--code-bg);
-  box-sizing: border-box;
-}
-
-.gallery-page__create-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.gallery-page__create-row,
-.gallery-page__rename-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: 100%;
-}
-
-.gallery-page__create-input,
-.gallery-page__rename-input {
-  flex: 1 1 180px;
-  min-width: 0;
-  min-height: 44px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text-h);
-  font: inherit;
-  font-size: 15px;
-}
-
-.gallery-page__create-btn,
-.gallery-page__rename-btn,
-.gallery-page__cancel-btn {
-  min-height: 44px;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.gallery-page__create-btn,
-.gallery-page__rename-btn {
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-}
-
-.gallery-page__cancel-btn {
-  color: var(--text-h);
-  background: var(--bg);
-  border: 1px solid var(--border);
-}
-
-.gallery-page__folder-strip {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-  width: 100%;
-}
-
-@media (min-width: 641px) {
-  .gallery-page__folder-strip {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 16px;
-  }
-}
-
-.gallery-page__filter-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 52px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-h);
-  background: var(--bg);
-  cursor: pointer;
-}
-
-.gallery-page__filter-btn--active {
-  border-color: #6d3df2;
-  background: rgba(109, 61, 242, 0.08);
-  color: #6d3df2;
-}
-
-.gallery-page__filter-btn--drop-highlight {
-  border-color: #6d3df2;
-  box-shadow: 0 0 0 3px rgba(109, 61, 242, 0.18);
-}
-
-.gallery-page__filter-count {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.gallery-page__section-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.gallery-page__delete-folder-btn {
-  align-self: flex-start;
-  min-height: 40px;
-  padding: 8px 14px;
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  border-radius: 8px;
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 500;
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
-  cursor: pointer;
+  background: #f2ecff;
+  border: 1px solid #ddd2ff;
 }
 
 .gallery-page__loading-text {
   margin: 0;
   text-align: center;
   font-size: 14px;
-  color: var(--text);
+  color: #7c86a3;
 }
 
-.gallery-page__error {
+.gallery-page__error,
+.gallery-page__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   width: 100%;
-}
-
-.gallery-page__retry-btn,
-.gallery-page__load-more-btn {
-  width: 100%;
-  max-width: 320px;
-  min-height: 44px;
-  font-family: var(--sans);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1.4;
-  padding: 10px 16px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  cursor: pointer;
-}
-
-.gallery-page__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
   padding: 32px 16px;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: var(--code-bg);
-  box-sizing: border-box;
+  border: 1px dashed #ddd2ff;
+  border-radius: 18px;
+  background: #fbf8ff;
   text-align: center;
 }
 
@@ -950,61 +1067,102 @@ onMounted(async () => {
   margin: 0;
   font-size: 15px;
   line-height: 1.5;
-  color: var(--text-h);
+  color: #111827;
 }
 
 .gallery-page__create-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 10px 18px;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  text-decoration: none;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
+  color: #6d3df2;
+  background: #f1ebff;
+  border-color: transparent;
+}
+
+.gallery-page__item-count {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: #7c86a3;
 }
 
 .gallery-page__load-more {
   display: flex;
   justify-content: center;
-  width: 100%;
-  padding-top: 4px;
 }
 
-@media (max-width: 480px) {
-  .gallery-page {
-    padding: 24px 16px;
+.gallery-page__load-more-btn,
+.gallery-page__retry-btn {
+  color: #6d3df2;
+  background: #f1ebff;
+  border-color: transparent;
+}
+
+.gallery-page__mobile-folders {
+  display: none;
+  gap: 8px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.gallery-page__folder-chip {
+  flex-shrink: 0;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid #e8e2f8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111827;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gallery-page__folder-chip--active {
+  border-color: #6d3df2;
+  background: #f2ecff;
+  color: #6d3df2;
+}
+
+@media (max-width: 960px) {
+  .gallery-page__layout {
+    grid-template-columns: 1fr;
   }
 
-  .gallery-page__card {
-    max-width: 100%;
-    gap: 16px;
+  .gallery-page__sidebar--desktop {
+    display: none;
   }
 
-  .gallery-page__header h1 {
-    font-size: 28px;
+  .gallery-page__mobile-folders {
+    display: flex;
+  }
+}
+
+@media (max-width: 640px) {
+  .gallery-page--explorer {
+    padding: 16px 12px 28px;
   }
 
-  .gallery-page__toolbar-btn,
-  .gallery-page__retry-btn,
-  .gallery-page__load-more-btn {
+  .gallery-page__panel {
+    padding: 16px;
+  }
+
+  .gallery-page__controls {
     width: 100%;
-    max-width: 100%;
+    justify-content: flex-start;
   }
 
-  .gallery-page__create-row,
-  .gallery-page__rename-row {
-    flex-direction: column;
-  }
-
-  .gallery-page__create-btn,
-  .gallery-page__rename-btn,
-  .gallery-page__cancel-btn {
+  .gallery-page__control-btn,
+  .gallery-page__sort-select {
     width: 100%;
+  }
+
+  .gallery-page__view-toggle {
+    width: 100%;
+  }
+
+  .gallery-page__view-btn {
+    flex: 1 1 50%;
   }
 }
 </style>
