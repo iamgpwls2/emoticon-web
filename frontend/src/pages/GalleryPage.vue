@@ -171,12 +171,21 @@ const displayItems = computed(() => {
   return filterFavoriteItems(sortedItems.value)
 })
 
+/**
+ * 현재 화면에 렌더링 중인 이미지 목록.
+ * displayItems(정렬·즐겨찾기 필터 반영)와 동일하며,
+ * 전체 선택·일괄 다운로드는 DB 전체가 아닌 이 목록 기준으로 동작합니다.
+ */
 const visibleGenerations = computed(() => displayItems.value)
 
 const visibleGenerationIds = computed(() =>
   visibleGenerations.value.map((item) => item.id)
 )
 
+/**
+ * 화면에 보이는 모든 이미지가 선택됐는지 여부.
+ * 폴더·정렬·즐겨찾기 필터로 숨겨진 항목은 전체 선택 대상에서 제외됩니다.
+ */
 const isAllVisibleSelected = computed(() => {
   const visibleIds = visibleGenerationIds.value
   return (
@@ -197,6 +206,12 @@ const isSuccess = () =>
 
 const dropEnabled = computed(() => isDragging.value)
 
+/**
+ * selectedFolderId를 GET /api/generations/me 의 collectionId 쿼리값으로 변환합니다.
+ * - 'uncategorized' → 'uncategorized'
+ * - 'collection:{uuid}' → uuid
+ * - 'all' / 'favorite' → undefined (서버가 전체 목록 반환)
+ */
 function resolveCollectionIdForFetch() {
   if (selectedFolderId.value === 'uncategorized') return 'uncategorized'
   if (selectedFolderId.value.startsWith('collection:')) {
@@ -356,6 +371,10 @@ function handleCardDragEnd() {
   dragOverFolderId.value = ''
 }
 
+/**
+ * 드래그 종료(drop) 시 dataTransfer에서 이동할 generation id 목록을 추출합니다.
+ * dragstart에서 DRAG_MIME_TYPE('application/x-emoticon-ids')으로 JSON 배열을 저장합니다.
+ */
 function parseDraggedIds(event) {
   const raw = event.dataTransfer?.getData(DRAG_MIME_TYPE)
   if (!raw) return []
@@ -399,6 +418,11 @@ function handleFolderDragLeave(folderId) {
   }
 }
 
+/**
+ * 선택된 generation들을 대상 폴더로 이동하고 로컬 state를 갱신합니다.
+ * API 성공 후 items에서 이동된 id를 제거하고(현재 폴더 뷰 기준),
+ * total·폴더 개수(loadCollections)를 맞춘 뒤 선택을 초기화합니다.
+ */
 async function moveSelectedGenerations(generationIds, collectionId) {
   folderActionErrorMessage.value = ''
   movingIds.value = generationIds
@@ -617,6 +641,11 @@ async function handleFolderMoveSelect(collectionId) {
   await moveSelectedGenerations(generationIds, collectionId)
 }
 
+/**
+ * 선택된 이미지를 일괄 삭제하고 UI를 갱신합니다.
+ * API 응답의 deletedIds만 items에서 제거하며(부분 삭제 대응),
+ * total·폴더 개수를 갱신한 뒤 선택 모드를 초기화합니다.
+ */
 async function handleBulkDelete() {
   if (selectedIds.value.length === 0 || isBulkDeleting.value) return
 
