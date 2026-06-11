@@ -189,7 +189,7 @@ async function requestOpenAiCompatibleImageEdit({
   formData.append('model', model);
   formData.append('prompt', prompt);
   formData.append('size', '1024x1024');
-  formData.append('input_fidelity', 'high');
+  formData.append('input_fidelity', 'low');
   formData.append(
     'image',
     new Blob([referenceImageBuffer], { type: referenceMimeType }),

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import FolderCreateModal from '../components/FolderCreateModal.vue'
@@ -9,40 +9,25 @@ import GalleryGrid from '../components/GalleryGrid.vue'
 import GallerySidebar from '../components/GallerySidebar.vue'
 import GalleryToast from '../components/GalleryToast.vue'
 import { useAuth } from '../composables/useAuth.js'
+import { useGalleryData } from '../composables/useGalleryData.js'
+import { useGalleryDisplay } from '../composables/useGalleryDisplay.js'
 import { useGalleryFolders } from '../composables/useGalleryFolders.js'
 import { useGallerySelection } from '../composables/useGallerySelection.js'
+import { useGalleryToast } from '../composables/useGalleryToast.js'
 import { useFavorites } from '../composables/useFavorites.js'
 import { COLLECTION_PREFIX, FOLDER_ID } from '../constants/gallery.js'
-import { deleteGeneration, fetchMyGenerations } from '../services/generation.service.js'
+import { deleteGeneration } from '../services/generation.service.js'
 import { toUserErrorMessage } from '../utils/apiError.js'
-
-const PAGE_LIMIT = 12
-const TOAST_DURATION_MS = 3000
 
 const collections = ref([])
 const uncategorizedCount = ref(0)
-const allFolderTotal = ref(0)
 
 const selectedFolderId = ref(FOLDER_ID.ALL)
-const items = ref([])
-const page = ref(1)
-const hasMore = ref(false)
-const total = ref(0)
 
-const isLoading = ref(false)
-const isLoadingMore = ref(false)
-const errorMessage = ref('')
 const deleteErrorMessage = ref('')
 const folderActionErrorMessage = ref('')
 
 const deletingId = ref('')
-
-const sortOrder = ref('newest')
-const viewMode = ref('grid')
-
-const toastMessage = ref('')
-const toastVisible = ref(false)
-let toastTimerId = null
 
 const { isAuthReady, isAuthenticated, accessToken, user } = useAuth()
 
@@ -54,134 +39,36 @@ const {
   clearFavorites,
 } = useFavorites()
 
-function showToast(message) {
-  toastMessage.value = message
-  toastVisible.value = true
+const { toastMessage, toastVisible, showToast } = useGalleryToast()
 
-  if (toastTimerId) {
-    clearTimeout(toastTimerId)
-  }
+let loadCollectionsBridge = async () => {}
+let resetExternalBridge = () => {}
+let galleryLoadGeneration = 0
 
-  toastTimerId = setTimeout(() => {
-    toastVisible.value = false
-  }, TOAST_DURATION_MS)
-}
-
-/**
- * selectedFolderId를 GET /api/generations/me 의 collectionId 쿼리값으로 변환합니다.
- * - 'uncategorized' → 'uncategorized'
- * - 'collection:{uuid}' → uuid
- * - 'all' / 'favorite' → undefined (서버가 전체 목록 반환)
- */
-function resolveCollectionIdForFetch() {
-  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) {
-    return FOLDER_ID.UNCATEGORIZED
-  }
-  if (selectedFolderId.value.startsWith(COLLECTION_PREFIX)) {
-    return selectedFolderId.value.slice(COLLECTION_PREFIX.length)
-  }
-  return undefined
-}
-
-function syncFolderListCount(fetchedTotal) {
-  const folderId = selectedFolderId.value
-
-  if (folderId === FOLDER_ID.ALL) {
-    allFolderTotal.value = fetchedTotal
-    return
-  }
-
-  if (folderId === FOLDER_ID.UNCATEGORIZED) {
-    uncategorizedCount.value = fetchedTotal
-    return
-  }
-
-  if (folderId.startsWith(COLLECTION_PREFIX)) {
-    const collectionId = folderId.slice(COLLECTION_PREFIX.length)
-    collections.value = collections.value.map((collection) =>
-      collection.id === collectionId
-        ? { ...collection, itemCount: fetchedTotal }
-        : collection
-    )
-  }
-}
-
-function adjustCountsAfterDelete(deletedCount = 1) {
-  allFolderTotal.value = Math.max(0, allFolderTotal.value - deletedCount)
-  total.value = Math.max(0, total.value - deletedCount)
-
-  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) {
-    uncategorizedCount.value = Math.max(
-      0,
-      uncategorizedCount.value - deletedCount
-    )
-    return
-  }
-
-  if (selectedFolderId.value.startsWith(COLLECTION_PREFIX)) {
-    const collectionId = selectedFolderId.value.slice(COLLECTION_PREFIX.length)
-    collections.value = collections.value.map((collection) =>
-      collection.id === collectionId
-        ? {
-            ...collection,
-            itemCount: Math.max(0, (collection.itemCount ?? 0) - deletedCount),
-          }
-        : collection
-    )
-  }
-}
-
-async function loadImages({ nextPage = 1, append = false } = {}) {
-  if (append) {
-    if (isLoadingMore.value || isLoading.value || !hasMore.value) return
-    isLoadingMore.value = true
-  } else {
-    if (isLoading.value) return
-    isLoading.value = true
-    errorMessage.value = ''
-  }
-
-  try {
-    const result = await fetchMyGenerations({
-      page: nextPage,
-      limit: PAGE_LIMIT,
-      collectionId: resolveCollectionIdForFetch(),
-    })
-
-    items.value = append ? [...items.value, ...result.items] : result.items
-    page.value = result.page
-    hasMore.value = Boolean(result.hasMore)
-
-    const fetchedTotal = result.total ?? items.value.length
-    total.value = fetchedTotal
-    if (!append) {
-      syncFolderListCount(fetchedTotal)
-    }
-  } catch (err) {
-    if (!append) {
-      items.value = []
-      hasMore.value = false
-      total.value = 0
-      syncFolderListCount(0)
-    }
-
-    errorMessage.value = toUserErrorMessage(
-      err,
-      '이모티콘 목록을 불러오지 못했습니다. 다시 시도해 주세요.'
-    )
-  } finally {
-    isLoading.value = false
-    isLoadingMore.value = false
-  }
-}
-
-async function refreshGallery({ resetPage = true } = {}) {
-  await loadCollections()
-  if (resetPage) {
-    page.value = 1
-  }
-  await loadImages({ nextPage: page.value, append: false })
-}
+const {
+  items,
+  page,
+  hasMore,
+  total,
+  allFolderTotal,
+  isLoading,
+  isLoadingMore,
+  errorMessage,
+  lastLoadedUserId,
+  adjustCountsAfterDelete,
+  loadImages,
+  refreshGallery,
+  resetGalleryState,
+} = useGalleryData({
+  selectedFolderId,
+  collections,
+  uncategorizedCount,
+  loadCollections: () => loadCollectionsBridge(),
+  onResetStart: () => {
+    galleryLoadGeneration += 1
+  },
+  onResetExternal: () => resetExternalBridge(),
+})
 
 let clearSelectionBridge = () => {}
 
@@ -229,61 +116,30 @@ const {
   allFolderTotal,
 })
 
-const sortedItems = computed(() => {
-  const list = [...items.value]
+loadCollectionsBridge = loadCollections
 
-  if (sortOrder.value === 'oldest') {
-    return list.reverse()
-  }
-
-  if (sortOrder.value === 'name') {
-    return list.sort((a, b) => {
-      const nameA = [a.emotion, a.motion, a.inputText]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      const nameB = [b.emotion, b.motion, b.inputText]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return nameA.localeCompare(nameB, 'ko')
-    })
-  }
-
-  return list
+const {
+  sortOrder,
+  viewMode,
+  displayItems,
+  visibleGenerations,
+  filterTitle,
+  filterDescription,
+  folderItemCount,
+  hasAnyImages,
+  isInitialLoading,
+  isEmpty,
+  isSuccess,
+} = useGalleryDisplay({
+  items,
+  selectedFolderId,
+  filterFavoriteItems,
+  activeCollection,
+  allFolderTotal,
+  isAuthReady,
+  isLoading,
+  errorMessage,
 })
-
-function filterItemsByFolder(list, folderId) {
-  if (folderId === FOLDER_ID.ALL) {
-    return list
-  }
-
-  if (folderId === FOLDER_ID.FAVORITE) {
-    return filterFavoriteItems(list)
-  }
-
-  if (folderId === FOLDER_ID.UNCATEGORIZED) {
-    return list.filter((item) => !item.collectionId)
-  }
-
-  if (folderId.startsWith(COLLECTION_PREFIX)) {
-    const collectionId = folderId.slice(COLLECTION_PREFIX.length)
-    return list.filter((item) => item.collectionId === collectionId)
-  }
-
-  return list
-}
-
-const displayItems = computed(() =>
-  filterItemsByFolder(sortedItems.value, selectedFolderId.value)
-)
-
-/**
- * 현재 화면에 렌더링 중인 이미지 목록.
- * displayItems(정렬·즐겨찾기 필터 반영)와 동일하며,
- * 전체 선택·일괄 다운로드는 DB 전체가 아닌 이 목록 기준으로 동작합니다.
- */
-const visibleGenerations = computed(() => displayItems.value)
 
 const {
   selectionMode,
@@ -324,31 +180,17 @@ const {
 
 clearSelectionBridge = clearSelection
 
-const filterTitle = computed(() => {
-  if (selectedFolderId.value === FOLDER_ID.ALL) return '전체 이미지'
-  if (selectedFolderId.value === FOLDER_ID.FAVORITE) return '즐겨찾기'
-  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) return '미분류'
-  if (activeCollection.value) return activeCollection.value.name
-  return '갤러리'
-})
-
-const filterDescription = computed(() => {
-  if (activeCollection.value?.description?.trim()) {
-    return activeCollection.value.description.trim()
-  }
-  return '설명 없음'
-})
-
-const folderItemCount = computed(() => displayItems.value.length)
-
-const hasAnyImages = computed(() => allFolderTotal.value > 0)
-
-const isInitialLoading = () =>
-  (!isAuthReady.value || isLoading.value) && items.value.length === 0
-const isEmpty = () =>
-  !isLoading.value && !errorMessage.value && displayItems.value.length === 0
-const isSuccess = () =>
-  !isLoading.value && !errorMessage.value && displayItems.value.length > 0
+resetExternalBridge = () => {
+  collections.value = []
+  uncategorizedCount.value = 0
+  selectedFolderId.value = FOLDER_ID.ALL
+  deleteErrorMessage.value = ''
+  folderActionErrorMessage.value = ''
+  deletingId.value = ''
+  clearFavorites()
+  resetFolderUiState()
+  resetSelectionState()
+}
 
 function handleFolderDragEnter(folderId) {
   handleFolderDragEnterCore(folderId, isDragging.value)
@@ -395,47 +237,31 @@ function handleLoadMore() {
   loadImages({ nextPage: page.value + 1, append: true })
 }
 
-let galleryLoadGeneration = 0
-let lastLoadedUserId = null
-
-function resetGalleryState() {
-  galleryLoadGeneration += 1
-  collections.value = []
-  uncategorizedCount.value = 0
-  allFolderTotal.value = 0
-  selectedFolderId.value = FOLDER_ID.ALL
-  items.value = []
-  page.value = 1
-  hasMore.value = false
-  total.value = 0
-  isLoading.value = false
-  isLoadingMore.value = false
-  errorMessage.value = ''
-  deleteErrorMessage.value = ''
-  folderActionErrorMessage.value = ''
-  deletingId.value = ''
-  clearFavorites()
-  resetFolderUiState()
-  resetSelectionState()
-}
-
 watch(
   [isAuthReady, isAuthenticated, accessToken, () => user.value?.id],
   async ([ready, authed, token, userId]) => {
     if (!ready) return
 
     if (!authed || !token || !userId) {
-      lastLoadedUserId = null
+      lastLoadedUserId.value = null
       resetGalleryState()
       return
     }
 
-    if (lastLoadedUserId === userId) return
-    lastLoadedUserId = userId
+    if (lastLoadedUserId.value === userId) return
 
     const currentGeneration = ++galleryLoadGeneration
-    await refreshGallery()
-    if (currentGeneration !== galleryLoadGeneration) return
+    try {
+      await refreshGallery()
+      if (currentGeneration !== galleryLoadGeneration) return
+      if (errorMessage.value) {
+        console.warn('갤러리 첫 로드 실패, 재시도 가능 상태 유지')
+        return
+      }
+      lastLoadedUserId.value = userId
+    } catch {
+      console.warn('갤러리 첫 로드 실패, 재시도 가능 상태 유지')
+    }
   },
   { immediate: true }
 )

@@ -6,7 +6,7 @@ import CreatePage from '../pages/CreatePage.vue'
 import GalleryPage from '../pages/GalleryPage.vue'
 import { initAuth, useAuthState } from '../lib/authSession.js'
 
-const { session } = useAuthState()
+const { session, accessToken } = useAuthState()
 
 const router = createRouter({
   history: createWebHistory(),
@@ -52,7 +52,7 @@ router.beforeEach(async (to) => {
 
   const isAuthenticated = Boolean(session.value)
 
-  if (to.meta.requiresAuth && !isAuthenticated) {
+  if (to.meta.requiresAuth && (!session.value || !accessToken.value)) {
     return {
       path: '/login',
       query: { redirect: to.fullPath },
