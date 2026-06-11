@@ -137,8 +137,21 @@ export function validateMoveGenerationCollection(req, res, next) {
 /**
  * GET /api/generations/me query 검증.
  */
+function parseBooleanQuery(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (value === true || value === 'true') {
+    return true;
+  }
+  if (value === false || value === 'false') {
+    return false;
+  }
+  return null;
+}
+
 export function validateListMyGenerationsQuery(req, res, next) {
-  const { collectionId } = req.query ?? {};
+  const { collectionId, favorite } = req.query ?? {};
 
   if (
     typeof collectionId === 'string' &&
@@ -152,6 +165,42 @@ export function validateListMyGenerationsQuery(req, res, next) {
           {
             field: 'collectionId',
             message: 'collectionId 형식이 올바르지 않습니다.',
+          },
+        ],
+      })
+    );
+  }
+
+  const parsedFavorite = parseBooleanQuery(favorite);
+  if (parsedFavorite === null) {
+    return next(
+      HttpError.validation('입력값을 확인해 주세요.', {
+        errors: [
+          {
+            field: 'favorite',
+            message: 'favorite는 true 또는 false여야 합니다.',
+          },
+        ],
+      })
+    );
+  }
+
+  next();
+}
+
+/**
+ * PATCH /api/generations/:id/favorite body 검증.
+ */
+export function validatePatchGenerationFavorite(req, res, next) {
+  const { isFavorite } = req.body ?? {};
+
+  if (typeof isFavorite !== 'boolean') {
+    return next(
+      HttpError.validation('입력값을 확인해 주세요.', {
+        errors: [
+          {
+            field: 'isFavorite',
+            message: 'isFavorite는 boolean 값이어야 합니다.',
           },
         ],
       })

@@ -1,0 +1,112 @@
+---
+description: "Supabase Auth, DB, Storage, RLS, user data isolation, and service role security rules"
+globs:
+  - backend/src/**/*.js
+  - backend/src/**/*.ts
+  - server/src/**/*.js
+  - server/src/**/*.ts
+  - frontend/src/**/*.vue
+  - frontend/src/**/*.js
+  - frontend/src/**/*.ts
+  - client/src/**/*.vue
+  - client/src/**/*.js
+  - client/src/**/*.ts
+  - supabase/**/*.sql
+  - docs/**/*.md
+alwaysApply: false
+---
+
+# Supabase Security Rules
+
+> Auth, Storage, DB, RLS, API key 작업 시 **`docs/04-security/*`** 와 함께 우선 참고합니다.
+
+## Auth
+
+- Supabase Auth session은 **frontend**에서 로그인 상태 유지에 사용합니다.
+- Backend 보호 API 호출 시 Supabase **access token**을 `Authorization: Bearer <token>`으로 전달합니다.
+- Backend는 token을 검증하고 **`req.user.id`** 를 설정합니다 (`requireAuth` → `supabase.auth.getUser`).
+- 사용자 ID는 client 입력값(body/query/header/localStorage)이 아니라 **검증된 token에서만** 확정합니다.
+
+## Database
+
+사용자별 테이블에는 기본적으로 **`user_id`** 가 있어야 합니다.
+
+예시:
+- `emoticon_generations.user_id`
+- `emoticon_collections.user_id` (갤러리 폴더)
+
+조회·수정·삭제 시:
+- **현재 로그인 사용자 데이터만** 접근 가능해야 합니다.
+- 다른 사용자의 row를 조회하거나 삭제할 수 없어야 합니다.
+- 삭제·단건 조회 시 `id` + `user_id` **동시 조건**을 적용합니다.
+
+상세 스키마: `docs/02-contracts/db-schema.md`
+
+## RLS
+
+Supabase DB 테이블은 **RLS 활성화**를 전제로 합니다.
+
+정책 방향:
+- `SELECT`: `auth.uid() = user_id`
+- `INSERT`: `auth.uid() = user_id` (WITH CHECK)
+- `UPDATE`: `auth.uid() = user_id`
+- `DELETE`: `auth.uid() = user_id`
+
+Backend에서 **service role key**(`supabaseAdmin`)를 사용하면 RLS를 우회할 수 있으므로, controller/service 레벨에서 반드시 **`req.user.id` 기준 조건**을 적용합니다.
+
+```javascript
+await supabaseAdmin
+  .from('emoticon_generations')
+  .delete()
+  .eq('id', id)
+  .eq('user_id', req.user.id);  // 필수
+```
+
+상세: `docs/04-security/auth-rls-policy.md`
+
+## Storage
+
+Storage 경로는 **사용자별로 분리**합니다. path의 `user_id`는 **`req.user.id`** (= JWT 검증값)만 신뢰합니다.
+
+| Bucket | 경로 패턴 |
+|--------|-----------|
+| `user-uploads` | `{userId}/{timestamp}-{uuid}.{ext}` |
+| `generated-emoticons` | `{userId}/{generationId}.png` |
+
+- Frontend는 Storage **직접 쓰기 금지** — `POST /api/uploads/image` 등 backend API 경유
+- `supabaseAdmin` 업로드 시에도 path prefix는 **반드시 `req.user.id/`**
+
+상세: `docs/02-contracts/storage-policy.md`
+
+## API Key·Secret 분리
+
+| 구분 | Backend only | Frontend 허용 (`VITE_*`) |
+|------|--------------|---------------------------|
+| Service role | `SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | ❌ |
+| LLM | `LLM_API_KEY` | ❌ |
+| Image provider | `IMAGE_GENERATION_API_KEY` | ❌ |
+| Supabase URL | `SUPABASE_URL` | `VITE_SUPABASE_URL` |
+| Anon/publishable | `SUPABASE_PUBLISHABLE_KEY` | `VITE_SUPABASE_PUBLISHABLE_KEY` |
+| API base | — | `VITE_API_BASE_URL` |
+
+- secret·service role은 **frontend·`VITE_*`·Git·로그·API 응답**에 노출하지 않습니다.
+- `.env.example`에는 키 이름만, 실제 값은 넣지 않습니다.
+
+> backend 로그·오류 응답 규칙: `backend-express.mdc` 참조  
+> 상세: `docs/04-security/api-key-policy.md`
+
+## Supabase 클라이언트 역할
+
+| 클라이언트 | 키 | 용도 |
+|-----------|-----|------|
+| Frontend `supabase` | anon/publishable | Auth UI, RLS 적용 요청 |
+| Backend `supabase` | anon/publishable | JWT 검증 (`getUser`) |
+| Backend `supabaseAdmin` | service role | Storage 업로드, RLS bypass DB (+ app filter) |
+
+## 위협 대응 체크리스트
+
+- [ ] secret이 `frontend/.env`·`VITE_*`·Vue 코드에 없음
+- [ ] API가 client `userId`를 읽지 않고 `req.user.id`만 사용
+- [ ] service role 쿼리마다 `.eq('user_id', req.user.id)` 적용
+- [ ] Storage path가 `{req.user.id}/`로 시작
+- [ ] 삭제·조회 시 `id` + `user_id` 동시 조건

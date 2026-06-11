@@ -5,7 +5,9 @@ import ImageUploader from '../components/ImageUploader.vue'
 import PromptForm from '../components/PromptForm.vue'
 import PromptRefiner from '../components/PromptRefiner.vue'
 import PromptChatModal from '../components/PromptChatModal.vue'
+import DeleteConfirmModal from '../components/DeleteConfirmModal.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
+import GenerationLoadingCard from '../components/GenerationLoadingCard.vue'
 import GenerationResultCard from '../components/GenerationResultCard.vue'
 import { useGenerationJob } from '../composables/useGenerationJob.js'
 import { getUploadSignedUrl } from '../services/uploadService.js'
@@ -47,13 +49,16 @@ const storyPrompt = ref('')
 const finalPrompt = ref('')
 const promptTouched = ref(false)
 const generationErrorMessage = ref('')
-const regenerateErrorMessage = ref('')
 const isPromptChatModalOpen = ref(false)
 const restoredPromptForm = ref(null)
 const savingIndex = ref(-1)
 const saveMessages = ref({})
 const saveErrors = ref({})
 const downloadErrors = ref({})
+const deleteModalOpen = ref(false)
+const deleteModalLoading = ref(false)
+const deleteModalError = ref('')
+const pendingRemoveIndex = ref(-1)
 
 const DOWNLOAD_FAILED_MESSAGE =
   '이미지 다운로드에 실패했습니다. 이미지를 새 탭에서 열어 저장해 주세요.'
@@ -152,16 +157,13 @@ const uploadRequiredMessage = computed(() =>
     : ''
 )
 
-const generateButtonLabel = computed(() =>
-  isGenerating.value ? '이미지 생성 중...' : '이모티콘 생성'
-)
+const hasGenerationResults = computed(() => generationResults.value.length > 0)
 
-const canRegenerate = computed(
-  () =>
-    isFormComplete.value &&
-    hasFinalPrompt.value &&
-    !isUploadRequired.value
-)
+const generateButtonLabel = computed(() => {
+  if (isGenerating.value) return '이미지 생성 중...'
+  if (hasGenerationResults.value) return '다시 생성하기'
+  return '이모티콘 생성'
+})
 
 const showEmptyState = computed(
   () => generationResults.value.length === 0 && !isGenerating.value
@@ -368,7 +370,6 @@ async function restoreSavedInput() {
 
 function handleGenerationComplete() {
   generationErrorMessage.value = ''
-  regenerateErrorMessage.value = ''
 }
 
 async function restorePageState() {
@@ -410,24 +411,12 @@ async function runGeneration() {
 
 async function handleGenerateImage() {
   generationErrorMessage.value = ''
-  regenerateErrorMessage.value = ''
 
   const started = await runGeneration()
   if (!started) return
 
   if (generationError.value) {
     generationErrorMessage.value = generationError.value
-  }
-}
-
-async function handleRegenerate() {
-  regenerateErrorMessage.value = ''
-
-  const started = await runGeneration()
-  if (!started) return
-
-  if (generationError.value) {
-    regenerateErrorMessage.value = generationError.value
   }
 }
 
@@ -471,8 +460,32 @@ async function handleDownload(index) {
   }
 }
 
+function closeDeleteModal() {
+  if (deleteModalLoading.value) return
+  deleteModalOpen.value = false
+  deleteModalError.value = ''
+  pendingRemoveIndex.value = -1
+}
+
 function handleRemoveResult(index) {
-  removeResult(index)
+  if (isGenerating.value) return
+  pendingRemoveIndex.value = index
+  deleteModalError.value = ''
+  deleteModalOpen.value = true
+}
+
+function confirmRemoveResult() {
+  if (pendingRemoveIndex.value < 0 || deleteModalLoading.value) return
+
+  deleteModalLoading.value = true
+  deleteModalError.value = ''
+
+  try {
+    removeResult(pendingRemoveIndex.value)
+  } finally {
+    deleteModalLoading.value = false
+    closeDeleteModal()
+  }
 }
 </script>
 
@@ -488,7 +501,7 @@ function handleRemoveResult(index) {
       <span class="create-page__dots create-page__dots--2" />
     </div>
 
-    <div class="create-page__inner">
+    <div class="create-page__inner app-container app-container--wide">
       <header class="create-page__header generate-hero">
         <h1 class="create-page__title">이모티콘 생성</h1>
         <p class="create-page__lead">
@@ -590,36 +603,25 @@ function handleRemoveResult(index) {
           </div>
 
           <div v-else-if="showResultsPanel" class="generation-result__list">
-            <GenerationResultCard
-              v-for="(result, index) in generationResults"
-              :key="result.id"
-              :result="result"
-              :index="index"
-              :is-generating="isGenerating"
-              :can-regenerate="canRegenerate"
-              :upload-required="isUploadRequired"
-              :is-saving="savingIndex === index"
-              :save-message="saveMessages[index] || ''"
-              :save-error-message="saveErrors[index] || ''"
-              :download-error-message="downloadErrors[index] || ''"
-              :regenerate-error-message="regenerateErrorMessage"
-              @toggle="toggleResult"
-              @save="handleSave"
-              @download="handleDownload"
-              @regenerate="handleRegenerate"
-              @remove="handleRemoveResult"
-            />
+            <TransitionGroup name="generation-result-fade" tag="div" class="generation-result__list-inner">
+              <GenerationResultCard
+                v-for="(result, index) in generationResults"
+                :key="result.id"
+                :result="result"
+                :index="index"
+                :is-generating="isGenerating"
+                :is-saving="savingIndex === index"
+                :save-message="saveMessages[index] || ''"
+                :save-error-message="saveErrors[index] || ''"
+                :download-error-message="downloadErrors[index] || ''"
+                @toggle="toggleResult"
+                @save="handleSave"
+                @download="handleDownload"
+                @remove="handleRemoveResult"
+              />
 
-            <div
-              v-if="isGenerating"
-              class="generation-result__loading generation-result__loading--inline"
-              role="status"
-            >
-              <div class="generation-result__spinner" aria-hidden="true" />
-              <p class="generation-result__loading-text">
-                이미지를 생성하는 중입니다.
-              </p>
-            </div>
+              <GenerationLoadingCard v-if="isGenerating" key="generation-loading-card" />
+            </TransitionGroup>
           </div>
         </section>
       </section>
@@ -630,6 +632,16 @@ function handleRemoveResult(index) {
       :context="promptChatContext"
       @close="onClosePromptChat"
       @complete="onPromptChatComplete"
+    />
+
+    <DeleteConfirmModal
+      :open="deleteModalOpen"
+      title="이 생성 결과를 삭제할까요?"
+      description="삭제한 결과는 목록에서 다시 볼 수 없습니다."
+      :loading="deleteModalLoading"
+      :error-message="deleteModalError"
+      @cancel="closeDeleteModal"
+      @confirm="confirmRemoveResult"
     />
   </section>
 </template>
@@ -690,12 +702,34 @@ function handleRemoveResult(index) {
 }
 
 .generation-result__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.generation-result__list-inner {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.generation-result-fade-enter-active,
+.generation-result-fade-leave-active {
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease;
+}
+
+.generation-result-fade-enter-from,
+.generation-result-fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.generation-result-fade-move {
+  transition: transform 0.28s ease;
 }
 
 .generation-result__empty {

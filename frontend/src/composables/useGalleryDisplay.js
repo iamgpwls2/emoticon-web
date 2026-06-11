@@ -7,39 +7,13 @@ import { COLLECTION_PREFIX, FOLDER_ID } from '../constants/gallery.js'
 export function useGalleryDisplay({
   items,
   selectedFolderId,
-  filterFavoriteItems,
   activeCollection,
   allFolderTotal,
   isAuthReady,
   isLoading,
   errorMessage,
 }) {
-  const sortOrder = ref('newest')
   const viewMode = ref('grid')
-
-  const sortedItems = computed(() => {
-    const list = [...items.value]
-
-    if (sortOrder.value === 'oldest') {
-      return list.reverse()
-    }
-
-    if (sortOrder.value === 'name') {
-      return list.sort((a, b) => {
-        const nameA = [a.emotion, a.motion, a.inputText]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        const nameB = [b.emotion, b.motion, b.inputText]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        return nameA.localeCompare(nameB, 'ko')
-      })
-    }
-
-    return list
-  })
 
   function filterItemsByFolder(list, folderId) {
     if (folderId === FOLDER_ID.ALL) {
@@ -47,7 +21,7 @@ export function useGalleryDisplay({
     }
 
     if (folderId === FOLDER_ID.FAVORITE) {
-      return filterFavoriteItems(list)
+      return list
     }
 
     if (folderId === FOLDER_ID.UNCATEGORIZED) {
@@ -63,7 +37,7 @@ export function useGalleryDisplay({
   }
 
   const displayItems = computed(() =>
-    filterItemsByFolder(sortedItems.value, selectedFolderId.value)
+    filterItemsByFolder(items.value, selectedFolderId.value)
   )
 
   /**
@@ -102,9 +76,7 @@ export function useGalleryDisplay({
     !isLoading.value && !errorMessage.value && displayItems.value.length > 0
 
   return {
-    sortOrder,
     viewMode,
-    sortedItems,
     displayItems,
     visibleGenerations,
     filterTitle,

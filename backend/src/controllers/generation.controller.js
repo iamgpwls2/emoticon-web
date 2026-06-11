@@ -4,6 +4,7 @@ import {
   listMyGenerations,
   moveGenerationToCollection,
   saveGenerationToGallery,
+  updateGenerationFavorite,
 } from '../services/generation.service.js';
 import { runGenerationPipeline } from '../services/generationOrchestration.service.js';
 import { HttpError } from '../utils/httpError.js';
@@ -24,6 +25,8 @@ export async function getMyGenerations(req, res) {
     typeof req.query.collectionId === 'string' && req.query.collectionId.trim()
       ? req.query.collectionId.trim()
       : undefined;
+  const favorite =
+    req.query.favorite === 'true' || req.query.favorite === true;
 
   try {
     const { items, total } = await listMyGenerations({
@@ -31,6 +34,7 @@ export async function getMyGenerations(req, res) {
       page,
       limit,
       collectionId,
+      favorite: favorite || undefined,
     });
 
     return res.status(200).json({
@@ -95,6 +99,31 @@ export async function patchGenerationCollection(req, res) {
     rethrowControllerError(error, {
       logPrefix: `patchGenerationCollection failed (user=${userId}, generation=${id}):`,
       fallbackMessage: '폴더 이동에 실패했습니다. 다시 시도해 주세요.',
+    });
+  }
+}
+
+/**
+ * PATCH /api/generations/:id/favorite
+ * 본인 생성 기록의 즐겨찾기 상태를 갱신합니다.
+ */
+export async function patchGenerationFavorite(req, res) {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const { isFavorite } = req.body;
+
+  try {
+    const result = await updateGenerationFavorite({
+      userId,
+      generationId: id,
+      isFavorite,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    rethrowControllerError(error, {
+      logPrefix: `patchGenerationFavorite failed (user=${userId}, generation=${id}):`,
+      fallbackMessage: '즐겨찾기 변경에 실패했습니다. 다시 시도해 주세요.',
     });
   }
 }

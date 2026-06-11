@@ -1,4 +1,12 @@
--- User-created folders for gallery organization
+-- =============================================================================
+-- 목적: 갤러리 폴더(emoticon_collections) 테이블 및 generation.collection_id FK 추가
+-- 실행 위치: Supabase Dashboard → SQL Editor
+-- 관련 문서: docs/02-contracts/db-schema.md
+-- 실행 여부:
+--   [ ] 미실행
+--   [ ] 실행 완료 (YYYY-MM-DD, )
+-- 주의: set_updated_at()은 20260603_01에서 정의 — 그 파일을 먼저 실행
+-- =============================================================================
 
 create table if not exists public.emoticon_collections (
   id uuid primary key default gen_random_uuid(),

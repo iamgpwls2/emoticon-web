@@ -1,6 +1,7 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import ErrorMessage from './ErrorMessage.vue'
+import { useBodyScrollLock } from '../composables/useBodyScrollLock.js'
 import { getFixedQuestion } from '../constants/promptChat.js'
 import { chatPrompt } from '../services/prompt.service.js'
 import { toUserErrorMessage } from '../utils/apiError.js'
@@ -35,6 +36,8 @@ const pendingQuestion = ref(null)
 const completedResult = ref(null)
 const chatContainer = ref(null)
 const isFinalRequestPending = ref(false)
+
+useBodyScrollLock(toRef(props, 'isOpen'))
 
 const canSendInput = computed(
   () => Boolean(inputText.value.trim()) && !isLoading.value && !completedResult.value
@@ -252,6 +255,55 @@ function handleBackdropClick(event) {
   }
 }
 
+function handleKeydown(event) {
+  if (event.key === 'Escape') {
+    handleClose()
+  }
+}
+
+function isInsideModalPanel(element) {
+  return Boolean(element?.closest?.('.prompt-chat-modal__panel'))
+}
+
+function handleWheel(event) {
+  if (!isInsideModalPanel(event.target)) {
+    event.preventDefault()
+    return
+  }
+
+  const container = chatContainer.value
+  if (!container?.contains(event.target)) {
+    return
+  }
+
+  const { deltaY } = event
+  const { scrollTop, scrollHeight, clientHeight } = container
+  const atTop = scrollTop <= 0
+  const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+
+  if ((deltaY < 0 && atTop) || (deltaY > 0 && atBottom)) {
+    event.preventDefault()
+  }
+}
+
+function handleTouchMove(event) {
+  if (!isInsideModalPanel(event.target)) {
+    event.preventDefault()
+  }
+}
+
+function bindScrollGuards() {
+  document.addEventListener('keydown', handleKeydown)
+  document.addEventListener('wheel', handleWheel, { passive: false })
+  document.addEventListener('touchmove', handleTouchMove, { passive: false })
+}
+
+function unbindScrollGuards() {
+  document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('wheel', handleWheel)
+  document.removeEventListener('touchmove', handleTouchMove)
+}
+
 const previewPrompt = computed(() => {
   if (!completedResult.value?.finalPrompt) return ''
   return completedResult.value.finalPrompt.trim()
@@ -261,12 +313,19 @@ watch(
   () => props.isOpen,
   (open) => {
     if (open) {
+      bindScrollGuards()
       startConversation()
-    } else {
-      resetState()
+      return
     }
+
+    unbindScrollGuards()
+    resetState()
   }
 )
+
+onBeforeUnmount(() => {
+  unbindScrollGuards()
+})
 </script>
 
 <template>
@@ -414,6 +473,8 @@ watch(
   padding: 20px;
   background: rgba(17, 24, 39, 0.35);
   backdrop-filter: blur(4px);
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 .prompt-chat-modal__panel {
@@ -467,6 +528,9 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;

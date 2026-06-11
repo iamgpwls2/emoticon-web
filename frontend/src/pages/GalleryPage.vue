@@ -2,7 +2,9 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import ErrorMessage from '../components/ErrorMessage.vue'
+import DeleteConfirmModal from '../components/DeleteConfirmModal.vue'
 import FolderCreateModal from '../components/FolderCreateModal.vue'
+import FolderRenameModal from '../components/FolderRenameModal.vue'
 import GalleryActionBar from '../components/GalleryActionBar.vue'
 import GalleryFolderMoveModal from '../components/GalleryFolderMoveModal.vue'
 import GalleryGrid from '../components/GalleryGrid.vue'
@@ -29,14 +31,30 @@ const folderActionErrorMessage = ref('')
 
 const deletingId = ref('')
 
+const deleteModalOpen = ref(false)
+const deleteModalTitle = ref('')
+const deleteModalDescription = ref('')
+const deleteModalLoading = ref(false)
+const deleteModalError = ref('')
+const deleteModalShowCascade = ref(false)
+const deleteModalCascade = ref(false)
+const pendingDeleteAction = ref(null)
+
+const showRenameFolderModal = ref(false)
+const renameFolderId = ref('')
+const renameFolderCurrentName = ref('')
+const renameModalError = ref('')
+
 const { isAuthReady, isAuthenticated, accessToken, user } = useAuth()
 
 const {
-  favoriteIds,
   favoriteCount,
+  togglingIds,
+  favoriteError,
   toggleFavorite,
-  filterFavoriteItems,
-  clearFavorites,
+  loadFavoriteCount,
+  syncFavoriteCountFromTotal,
+  clearFavoriteError,
 } = useFavorites()
 
 const { toastMessage, toastVisible, showToast } = useGalleryToast()
@@ -68,9 +86,10 @@ const {
     galleryLoadGeneration += 1
   },
   onResetExternal: () => resetExternalBridge(),
+  onFavoriteTotalLoaded: syncFavoriteCountFromTotal,
 })
 
-let clearSelectionBridge = () => {}
+let exitSelectionModeBridge = () => {}
 
 const {
   movingIds,
@@ -78,8 +97,6 @@ const {
   showCreateFolderModal,
   isCreatingFolder,
   isRenamingFolder,
-  isEditingFolderName,
-  editFolderName,
   totalImageCount,
   activeCollection,
   customFolders,
@@ -93,11 +110,9 @@ const {
   openCreateFolderModal,
   closeCreateFolderModal,
   handleCreateFolder,
-  startRenameFolder,
-  cancelRenameFolder,
-  handleRenameFolder,
-  handleSidebarRename,
-  handleDeleteFolder,
+  renameFolderById,
+  getFolderDeleteInfo,
+  executeDeleteFolder,
   moveSelectedGenerations,
   resetFolderUiState,
 } = useGalleryFolders({
@@ -110,7 +125,7 @@ const {
   showToast,
   refreshGallery,
   loadImages,
-  clearSelection: () => clearSelectionBridge(),
+  exitSelectionMode: () => exitSelectionModeBridge(),
   collections,
   uncategorizedCount,
   allFolderTotal,
@@ -119,7 +134,6 @@ const {
 loadCollectionsBridge = loadCollections
 
 const {
-  sortOrder,
   viewMode,
   displayItems,
   visibleGenerations,
@@ -133,7 +147,6 @@ const {
 } = useGalleryDisplay({
   items,
   selectedFolderId,
-  filterFavoriteItems,
   activeCollection,
   allFolderTotal,
   isAuthReady,
@@ -152,7 +165,7 @@ const {
   selectedCount,
   isAllVisibleSelected,
   dropEnabled,
-  clearSelection,
+  exitSelectionMode,
   toggleSelectionMode,
   toggleSelectAllVisible,
   toggleSelect,
@@ -161,7 +174,7 @@ const {
   openFolderMoveModal,
   closeFolderMoveModal,
   handleFolderMoveSelect,
-  handleBulkDelete,
+  executeBulkDelete,
   handleBulkDownload,
   removeFromSelection,
   resetSelectionState,
@@ -178,7 +191,7 @@ const {
   adjustCountsAfterDelete,
 })
 
-clearSelectionBridge = clearSelection
+exitSelectionModeBridge = exitSelectionMode
 
 resetExternalBridge = () => {
   collections.value = []
@@ -187,7 +200,7 @@ resetExternalBridge = () => {
   deleteErrorMessage.value = ''
   folderActionErrorMessage.value = ''
   deletingId.value = ''
-  clearFavorites()
+  clearFavoriteError()
   resetFolderUiState()
   resetSelectionState()
 }
@@ -200,32 +213,210 @@ function handleFolderDrop(payload) {
   return handleFolderDropCore(payload, isDragging.value)
 }
 
-async function handleDelete(generationId) {
+function closeDeleteModal() {
+  if (deleteModalLoading.value) return
+  deleteModalOpen.value = false
+  deleteModalError.value = ''
+  deleteModalShowCascade.value = false
+  deleteModalCascade.value = false
+  pendingDeleteAction.value = null
+}
+
+function openDeleteModal({ title, description, showCascadeOption = false, action }) {
+  deleteModalTitle.value = title
+  deleteModalDescription.value = description
+  deleteModalShowCascade.value = showCascadeOption
+  deleteModalCascade.value = false
+  deleteModalError.value = ''
+  pendingDeleteAction.value = action
+  deleteModalOpen.value = true
+}
+
+function requestDeleteGeneration(generationId) {
   if (deletingId.value) return
 
-  deletingId.value = generationId
-  deleteErrorMessage.value = ''
+  openDeleteModal({
+    title: '이 이모티콘을 삭제할까요?',
+    description: '삭제한 이모티콘은 갤러리에서 다시 볼 수 없습니다.',
+    action: async () => {
+      deletingId.value = generationId
+      deleteErrorMessage.value = ''
 
-  try {
-    await deleteGeneration(generationId)
-    items.value = items.value.filter((item) => item.id !== generationId)
-    adjustCountsAfterDelete(1)
-    removeFromSelection(generationId)
-    await loadCollections()
-  } catch (err) {
-    deleteErrorMessage.value = toUserErrorMessage(
-      err,
-      '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
-    )
-  } finally {
-    deletingId.value = ''
+      try {
+        await deleteGeneration(generationId)
+        items.value = items.value.filter((item) => item.id !== generationId)
+        adjustCountsAfterDelete(1)
+        removeFromSelection(generationId)
+        await loadCollections()
+        return true
+      } catch (err) {
+        deleteModalError.value = toUserErrorMessage(
+          err,
+          '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
+        )
+        return false
+      } finally {
+        deletingId.value = ''
+      }
+    },
+  })
+}
+
+function requestBulkDelete() {
+  if (selectedCount.value === 0 || isBulkDeleting.value) return
+
+  const count = selectedCount.value
+  openDeleteModal({
+    title:
+      count === 1
+        ? '이 이모티콘을 삭제할까요?'
+        : `선택한 이모티콘 ${count}개를 삭제할까요?`,
+    description: '삭제한 이모티콘은 갤러리에서 다시 볼 수 없습니다.',
+    action: async () => {
+      const success = await executeBulkDelete()
+      if (!success && deleteErrorMessage.value) {
+        deleteModalError.value = deleteErrorMessage.value
+      }
+      return success
+    },
+  })
+}
+
+function openRenameFolderModal(folderId) {
+  const folder = customFolders.value.find((item) => item.id === folderId)
+  if (!folder) return
+
+  renameFolderId.value = folderId
+  renameFolderCurrentName.value = folder.name
+  renameModalError.value = ''
+  showRenameFolderModal.value = true
+}
+
+function closeRenameFolderModal() {
+  if (isRenamingFolder.value) return
+
+  showRenameFolderModal.value = false
+  renameFolderId.value = ''
+  renameFolderCurrentName.value = ''
+  renameModalError.value = ''
+}
+
+async function handleRenameFolderSubmit(name) {
+  renameModalError.value = ''
+
+  const result = await renameFolderById(renameFolderId.value, name)
+  if (result.success) {
+    closeRenameFolderModal()
+    return
+  }
+
+  if (result.error) {
+    renameModalError.value = result.error
   }
 }
 
-function handleToggleFavorite(generationId) {
-  const added = toggleFavorite(generationId)
-  if (added) {
-    showToast('즐겨찾기에 추가했습니다.')
+function requestDeleteFolder(folderId) {
+  const info = getFolderDeleteInfo(folderId)
+  if (!info) return
+
+  openDeleteModal({
+    title: info.title,
+    description: info.description,
+    showCascadeOption: info.showCascadeOption,
+    action: async () => {
+      const success = await executeDeleteFolder(info.folderId, {
+        cascade: deleteModalCascade.value,
+      })
+      if (!success && folderActionErrorMessage.value) {
+        deleteModalError.value = folderActionErrorMessage.value
+      }
+      return success
+    },
+  })
+}
+
+async function confirmDeleteModal() {
+  if (!pendingDeleteAction.value || deleteModalLoading.value) return
+
+  deleteModalLoading.value = true
+  deleteModalError.value = ''
+
+  let success = false
+  try {
+    success = await pendingDeleteAction.value()
+  } finally {
+    deleteModalLoading.value = false
+    if (success) {
+      closeDeleteModal()
+    }
+  }
+}
+
+function isMobileDropTarget(folderId) {
+  return (
+    isDragging.value &&
+    folderId !== FOLDER_ID.ALL &&
+    folderId !== FOLDER_ID.FAVORITE
+  )
+}
+
+function isMobileDropDisabled(folderId) {
+  return (
+    isDragging.value &&
+    (folderId === FOLDER_ID.ALL || folderId === FOLDER_ID.FAVORITE)
+  )
+}
+
+function handleMobileFolderDragEnter(folderId) {
+  if (!isDragging.value) return
+  handleFolderDragEnter(folderId)
+}
+
+function handleMobileFolderDragLeave(folderId) {
+  if (!isDragging.value) return
+  handleFolderDragLeave(folderId)
+}
+
+function handleMobileFolderDragOver(folderId, event) {
+  if (!isDragging.value) return
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = isMobileDropTarget(folderId) ? 'move' : 'none'
+  }
+}
+
+async function handleMobileFolderDrop(folderId, event) {
+  await handleFolderDrop({ folderId, event })
+}
+
+async function handleToggleFavorite(generationId) {
+  const item = items.value.find((entry) => entry.id === generationId)
+  if (!item) return
+
+  const previousFavorite = item.isFavorite === true
+  const nextFavorite = !previousFavorite
+
+  item.isFavorite = nextFavorite
+  clearFavoriteError()
+
+  try {
+    const updatedFavorite = await toggleFavorite(generationId, previousFavorite)
+    item.isFavorite = updatedFavorite
+
+    if (updatedFavorite) {
+      showToast('즐겨찾기에 추가했습니다.')
+    }
+
+    if (selectedFolderId.value === FOLDER_ID.FAVORITE && !updatedFavorite) {
+      items.value = items.value.filter((entry) => entry.id !== generationId)
+      total.value = Math.max(0, total.value - 1)
+    }
+  } catch {
+    item.isFavorite = previousFavorite
+    showToast(
+      favoriteError.value ||
+        '즐겨찾기 변경에 실패했습니다. 다시 시도해 주세요.'
+    )
   }
 }
 
@@ -252,7 +443,7 @@ watch(
 
     const currentGeneration = ++galleryLoadGeneration
     try {
-      await refreshGallery()
+      await Promise.all([refreshGallery(), loadFavoriteCount()])
       if (currentGeneration !== galleryLoadGeneration) return
       if (errorMessage.value) {
         console.warn('갤러리 첫 로드 실패, 재시도 가능 상태 유지')
@@ -273,7 +464,7 @@ onMounted(() => {
 
 <template>
   <section class="gallery-page gallery-page--explorer">
-    <div class="gallery-page__layout">
+    <div class="gallery-page__layout app-container">
       <GallerySidebar
         class="gallery-page__sidebar gallery-page__sidebar--desktop"
         :selected-folder-id="selectedFolderId"
@@ -288,8 +479,8 @@ onMounted(() => {
         @folder-drag-enter="handleFolderDragEnter"
         @folder-drag-leave="handleFolderDragLeave"
         @folder-drop="handleFolderDrop"
-        @rename-folder="handleSidebarRename"
-        @delete-folder="handleDeleteFolder"
+        @open-rename-folder="openRenameFolderModal"
+        @delete-folder="requestDeleteFolder"
       />
 
       <div class="gallery-page__main">
@@ -297,24 +488,47 @@ onMounted(() => {
           <button
             type="button"
             class="gallery-page__folder-chip"
-            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.ALL }"
+            :class="{
+              'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.ALL,
+              'gallery-page__folder-chip--drop': dragOverFolderId === FOLDER_ID.ALL,
+              'gallery-page__folder-chip--drop-disabled': isMobileDropDisabled(FOLDER_ID.ALL),
+            }"
             @click="selectFolder(FOLDER_ID.ALL)"
+            @dragenter.prevent="handleMobileFolderDragEnter(FOLDER_ID.ALL)"
+            @dragleave="handleMobileFolderDragLeave(FOLDER_ID.ALL)"
+            @dragover="handleMobileFolderDragOver(FOLDER_ID.ALL, $event)"
+            @drop="handleMobileFolderDrop(FOLDER_ID.ALL, $event)"
           >
             전체 {{ totalImageCount }}
           </button>
           <button
             type="button"
             class="gallery-page__folder-chip"
-            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.FAVORITE }"
+            :class="{
+              'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.FAVORITE,
+              'gallery-page__folder-chip--drop': dragOverFolderId === FOLDER_ID.FAVORITE,
+              'gallery-page__folder-chip--drop-disabled': isMobileDropDisabled(FOLDER_ID.FAVORITE),
+            }"
             @click="selectFolder(FOLDER_ID.FAVORITE)"
+            @dragenter.prevent="handleMobileFolderDragEnter(FOLDER_ID.FAVORITE)"
+            @dragleave="handleMobileFolderDragLeave(FOLDER_ID.FAVORITE)"
+            @dragover="handleMobileFolderDragOver(FOLDER_ID.FAVORITE, $event)"
+            @drop="handleMobileFolderDrop(FOLDER_ID.FAVORITE, $event)"
           >
             즐겨찾기 {{ favoriteCount }}
           </button>
           <button
             type="button"
             class="gallery-page__folder-chip"
-            :class="{ 'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.UNCATEGORIZED }"
+            :class="{
+              'gallery-page__folder-chip--active': selectedFolderId === FOLDER_ID.UNCATEGORIZED,
+              'gallery-page__folder-chip--drop': dragOverFolderId === FOLDER_ID.UNCATEGORIZED,
+            }"
             @click="selectFolder(FOLDER_ID.UNCATEGORIZED)"
+            @dragenter.prevent="handleMobileFolderDragEnter(FOLDER_ID.UNCATEGORIZED)"
+            @dragleave="handleMobileFolderDragLeave(FOLDER_ID.UNCATEGORIZED)"
+            @dragover="handleMobileFolderDragOver(FOLDER_ID.UNCATEGORIZED, $event)"
+            @drop="handleMobileFolderDrop(FOLDER_ID.UNCATEGORIZED, $event)"
           >
             미분류 {{ uncategorizedCount }}
           </button>
@@ -326,8 +540,14 @@ onMounted(() => {
             :class="{
               'gallery-page__folder-chip--active':
                 selectedFolderId === `${COLLECTION_PREFIX}${folder.id}`,
+              'gallery-page__folder-chip--drop':
+                dragOverFolderId === `${COLLECTION_PREFIX}${folder.id}`,
             }"
             @click="selectFolder(folder.id)"
+            @dragenter.prevent="handleMobileFolderDragEnter(`${COLLECTION_PREFIX}${folder.id}`)"
+            @dragleave="handleMobileFolderDragLeave(`${COLLECTION_PREFIX}${folder.id}`)"
+            @dragover="handleMobileFolderDragOver(`${COLLECTION_PREFIX}${folder.id}`, $event)"
+            @drop="handleMobileFolderDrop(`${COLLECTION_PREFIX}${folder.id}`, $event)"
           >
             {{ folder.name }} {{ folder.itemCount }}
           </button>
@@ -338,49 +558,9 @@ onMounted(() => {
             <div class="gallery-page__folder-info">
               <div class="gallery-page__folder-title-row">
                 <span class="gallery-page__folder-icon" aria-hidden="true">📁</span>
-
-                <template v-if="isEditingFolderName && activeCollection">
-                  <input
-                    v-model="editFolderName"
-                    type="text"
-                    class="gallery-page__folder-name-input"
-                    maxlength="50"
-                    :disabled="isRenamingFolder"
-                    @keydown.enter.prevent="handleRenameFolder"
-                  />
-                </template>
-                <h1 v-else class="gallery-page__folder-title">
+                <h1 class="gallery-page__folder-title">
                   {{ filterTitle }}
                 </h1>
-
-                <button
-                  v-if="activeCollection && !isEditingFolderName"
-                  type="button"
-                  class="gallery-page__icon-btn"
-                  aria-label="폴더 이름 수정"
-                  @click="startRenameFolder"
-                >
-                  ✎
-                </button>
-                <template v-else-if="isEditingFolderName">
-                  <button
-                    type="button"
-                    class="gallery-page__icon-btn"
-                    :disabled="isRenamingFolder"
-                    @click="handleRenameFolder"
-                  >
-                    저장
-                  </button>
-                  <button
-                    type="button"
-                    class="gallery-page__icon-btn"
-                    :disabled="isRenamingFolder"
-                    @click="cancelRenameFolder"
-                  >
-                    취소
-                  </button>
-                </template>
-
                 <span class="gallery-page__folder-count">{{ folderItemCount }}개</span>
               </div>
 
@@ -396,15 +576,6 @@ onMounted(() => {
               >
                 {{ selectionMode ? '선택 취소' : '선택' }}
               </button>
-
-              <label class="gallery-page__sort">
-                <span class="gallery-page__sort-label">정렬:</span>
-                <select v-model="sortOrder" class="gallery-page__sort-select">
-                  <option value="newest">최신순</option>
-                  <option value="oldest">오래된순</option>
-                  <option value="name">이름순</option>
-                </select>
-              </label>
 
               <div class="gallery-page__view-toggle" role="group" aria-label="보기 전환">
                 <button
@@ -426,31 +597,23 @@ onMounted(() => {
                   ☰
                 </button>
               </div>
-
-              <button
-                v-if="activeCollection"
-                type="button"
-                class="gallery-page__control-btn gallery-page__control-btn--danger"
-                @click="handleDeleteFolder(activeCollection.id)"
-              >
-                폴더 삭제
-              </button>
             </div>
           </header>
 
           <ErrorMessage :message="folderActionErrorMessage" variant="error" />
 
           <GalleryActionBar
-            v-if="selectionMode && !isInitialLoading() && !errorMessage"
+            v-if="selectionMode && selectedCount > 0 && !isInitialLoading() && !errorMessage"
             :selected-count="selectedCount"
             :is-all-visible-selected="isAllVisibleSelected"
             :has-visible-items="visibleGenerations.length > 0"
             :bulk-downloading="isBulkDownloading"
             :bulk-deleting="isBulkDeleting"
             @folder-move="openFolderMoveModal"
-            @delete="handleBulkDelete"
+            @delete="requestBulkDelete"
             @download="handleBulkDownload"
             @toggle-select-all="toggleSelectAllVisible"
+            @clear-selection="exitSelectionMode"
           />
 
           <p
@@ -507,9 +670,9 @@ onMounted(() => {
               :deleting-id="deletingId"
               :moving-ids="movingIds"
               :dragging-id="draggedImageId"
-              :favorite-ids="favoriteIds"
+              :toggling-ids="togglingIds"
               :view-mode="viewMode"
-              @delete="handleDelete"
+              @delete="requestDeleteGeneration"
               @toggle-select="toggleSelect"
               @drag-start="handleCardDragStart"
               @drag-end="handleCardDragEnd"
@@ -518,7 +681,7 @@ onMounted(() => {
 
             <p class="gallery-page__item-count">{{ displayItems.length }}개 항목</p>
 
-            <div v-if="hasMore && selectedFolderId !== FOLDER_ID.FAVORITE" class="gallery-page__load-more">
+            <div v-if="hasMore" class="gallery-page__load-more">
               <button
                 type="button"
                 class="gallery-page__load-more-btn"
@@ -541,6 +704,16 @@ onMounted(() => {
       @create="handleCreateFolder"
     />
 
+    <FolderRenameModal
+      :open="showRenameFolderModal"
+      :current-name="renameFolderCurrentName"
+      :existing-names="existingFolderNames"
+      :loading="isRenamingFolder"
+      :error-message="renameModalError"
+      @close="closeRenameFolderModal"
+      @rename="handleRenameFolderSubmit"
+    />
+
     <GalleryFolderMoveModal
       :open="showFolderMoveModal"
       :folders="customFolders"
@@ -551,6 +724,18 @@ onMounted(() => {
     />
 
     <GalleryToast :message="toastMessage" :visible="toastVisible" />
+
+    <DeleteConfirmModal
+      :open="deleteModalOpen"
+      :title="deleteModalTitle"
+      :description="deleteModalDescription"
+      :loading="deleteModalLoading"
+      :error-message="deleteModalError"
+      :show-cascade-option="deleteModalShowCascade"
+      v-model:cascade-checked="deleteModalCascade"
+      @cancel="closeDeleteModal"
+      @confirm="confirmDeleteModal"
+    />
   </section>
 </template>
 
@@ -558,17 +743,16 @@ onMounted(() => {
 .gallery-page--explorer {
   width: 100%;
   min-height: 100%;
-  padding: 24px 20px 40px;
+  padding: 24px 0 40px;
   background: #f7f4ff;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .gallery-page__layout {
   display: grid;
   grid-template-columns: minmax(280px, 300px) minmax(0, 1fr);
   gap: 20px;
-  width: min(1280px, 100%);
-  margin-inline: auto;
 }
 
 .gallery-page__main {
@@ -617,18 +801,6 @@ onMounted(() => {
   color: #111827;
 }
 
-.gallery-page__folder-name-input {
-  min-width: 180px;
-  min-height: 42px;
-  padding: 8px 12px;
-  border: 1px solid #e8e2f8;
-  border-radius: 10px;
-  background: #fbf8ff;
-  font: inherit;
-  font-size: 18px;
-  font-weight: 700;
-}
-
 .gallery-page__folder-count {
   padding: 4px 10px;
   border-radius: 999px;
@@ -675,34 +847,6 @@ onMounted(() => {
   color: #6d3df2;
 }
 
-.gallery-page__control-btn--danger {
-  color: #ff4d6d;
-  border-color: #ffc9d3;
-  background: #fff5f7;
-}
-
-.gallery-page__sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.gallery-page__sort-label {
-  font-size: 14px;
-  color: #7c86a3;
-}
-
-.gallery-page__sort-select {
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid #e8e2f8;
-  border-radius: 12px;
-  background: #fbf8ff;
-  color: #111827;
-  font: inherit;
-  font-size: 14px;
-}
-
 .gallery-page__view-toggle {
   display: inline-flex;
   border: 1px solid #e8e2f8;
@@ -723,19 +867,6 @@ onMounted(() => {
 .gallery-page__view-btn--active {
   background: #f2ecff;
   color: #6d3df2;
-}
-
-.gallery-page__icon-btn {
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid #e8e2f8;
-  border-radius: 10px;
-  background: #fbf8ff;
-  color: #6d3df2;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .gallery-page__loading-text {
@@ -803,6 +934,12 @@ onMounted(() => {
   flex-shrink: 0;
   min-height: 38px;
   padding: 8px 14px;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
   border: 1px solid #e8e2f8;
   border-radius: 999px;
   background: #ffffff;
@@ -818,6 +955,22 @@ onMounted(() => {
   border-color: #6d3df2;
   background: #f2ecff;
   color: #6d3df2;
+}
+
+.gallery-page__folder-chip--drop {
+  border-color: #6d3df2;
+  background: #efe7ff;
+  color: #6d3df2;
+  transform: scale(1.03);
+  box-shadow: 0 6px 16px rgba(109, 61, 242, 0.16);
+}
+
+.gallery-page__folder-chip--drop-disabled {
+  border-color: #d1d5db;
+  background: #f9fafb;
+  color: #9ca3af;
+  transform: none;
+  box-shadow: none;
 }
 
 @media (max-width: 960px) {
@@ -836,7 +989,7 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .gallery-page--explorer {
-    padding: 16px 12px 28px;
+    padding: 16px 0 28px;
   }
 
   .gallery-page__panel {
@@ -848,8 +1001,7 @@ onMounted(() => {
     justify-content: flex-start;
   }
 
-  .gallery-page__control-btn,
-  .gallery-page__sort-select {
+  .gallery-page__control-btn {
     width: 100%;
   }
 

@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { deleteGenerations } from '../services/generation.service.js'
 import { toUserErrorMessage } from '../utils/apiError.js'
 import { downloadImage } from '../utils/downloadImage.js'
+import { cleanupDragGhost, setCardDragGhost } from '../utils/dragGhost.js'
 
 export const DRAG_MIME_TYPE = 'application/x-emoticon-ids'
 
@@ -53,10 +54,19 @@ export function useGallerySelection({
     dragOverFolderId.value = ''
   }
 
+  function exitSelectionMode() {
+    selectionMode.value = false
+    selectedIds.value = []
+    draggedImageId.value = ''
+    isDragging.value = false
+    showFolderMoveModal.value = false
+    dragOverFolderId.value = ''
+  }
+
   function toggleSelectionMode() {
     selectionMode.value = !selectionMode.value
     if (!selectionMode.value) {
-      clearSelection()
+      exitSelectionMode()
     }
   }
 
@@ -91,6 +101,7 @@ export function useGallerySelection({
     event.dataTransfer?.setData(DRAG_MIME_TYPE, JSON.stringify(dragIds))
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move'
+      setCardDragGhost(event.dataTransfer, dragIds.length)
     }
   }
 
@@ -98,6 +109,7 @@ export function useGallerySelection({
     draggedImageId.value = ''
     isDragging.value = false
     dragOverFolderId.value = ''
+    cleanupDragGhost()
   }
 
   function openFolderMoveModal() {
@@ -123,13 +135,8 @@ export function useGallerySelection({
    * API 응답의 deletedIds만 items에서 제거하며(부분 삭제 대응),
    * total·폴더 개수를 갱신한 뒤 선택 모드를 초기화합니다.
    */
-  async function handleBulkDelete() {
-    if (selectedIds.value.length === 0 || isBulkDeleting.value) return
-
-    const confirmed = window.confirm(
-      `선택한 ${selectedIds.value.length}개 이미지를 삭제할까요?\n삭제하면 복구할 수 없습니다.`
-    )
-    if (!confirmed) return
+  async function executeBulkDelete() {
+    if (selectedIds.value.length === 0 || isBulkDeleting.value) return false
 
     isBulkDeleting.value = true
     deleteErrorMessage.value = ''
@@ -141,14 +148,16 @@ export function useGallerySelection({
 
       items.value = items.value.filter((item) => !deletedSet.has(item.id))
       adjustCountsAfterDelete(result.deletedCount)
-      clearSelection()
+      exitSelectionMode()
       await loadCollections()
       showToast(`${result.deletedCount}개 이미지를 삭제했어요.`)
+      return true
     } catch (err) {
       deleteErrorMessage.value = toUserErrorMessage(
         err,
         '이모티콘 삭제에 실패했습니다. 다시 시도해 주세요.'
       )
+      return false
     } finally {
       isBulkDeleting.value = false
     }
@@ -182,6 +191,7 @@ export function useGallerySelection({
     }
 
     isBulkDownloading.value = false
+    exitSelectionMode()
 
     if (successCount > 0 && failCount === 0) {
       showToast(`${successCount}개 이미지를 다운로드했어요.`)
@@ -197,14 +207,9 @@ export function useGallerySelection({
   }
 
   function resetSelectionState() {
-    selectionMode.value = false
-    selectedIds.value = []
-    draggedImageId.value = ''
-    isDragging.value = false
-    showFolderMoveModal.value = false
+    exitSelectionMode()
     isBulkDownloading.value = false
     isBulkDeleting.value = false
-    dragOverFolderId.value = ''
   }
 
   return {
@@ -220,6 +225,7 @@ export function useGallerySelection({
     isAllVisibleSelected,
     dropEnabled,
     clearSelection,
+    exitSelectionMode,
     toggleSelectionMode,
     toggleSelectAllVisible,
     toggleSelect,
@@ -228,7 +234,7 @@ export function useGallerySelection({
     openFolderMoveModal,
     closeFolderMoveModal,
     handleFolderMoveSelect,
-    handleBulkDelete,
+    executeBulkDelete,
     handleBulkDownload,
     removeFromSelection,
     resetSelectionState,

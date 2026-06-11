@@ -10,6 +10,7 @@
 - 2026-06-02 (초안)
 - 2026-06-03 (Day 3 — `emoticon_generations` 본문 반영)
 - 2026-06-06 (Day 7 — `status` 값 `generating` · 생성 파이프라인 반영)
+- 2026-06-11 (갤러리 즐겨찾기 — `is_favorite` 컬럼 반영)
 
 ## 스택 전제
 
@@ -52,6 +53,9 @@
 | `story_prompt` | `text` | Yes | LLM이 구체화한 스토리/설명 프롬프트 |
 | `final_prompt` | `text` | Yes | 이미지 생성 API에 전달한 최종 프롬프트 |
 | `status` | `text` | No | 생성 상태. Day 7 MVP: `generating` · `completed` · `failed` |
+| `saved_to_gallery` | `boolean` | No | 갤러리 저장 여부. 기본 `false` — 사용자가 「갤러리에 저장」 시 `true` |
+| `is_favorite` | `boolean` | No | 즐겨찾기 여부. 기본 `false` — `PATCH /api/generations/:id/favorite`로 갱신 |
+| `collection_id` | `uuid` | Yes | 소속 폴더(`emoticon_collections.id`). 미분류는 `null` |
 | `error_message` | `text` | Yes | **생성 실패 시** 원인 요약(사용자·개발자 확인용). API key·vendor raw 오류 미포함. `status='failed'`일 때 설정 |
 | `created_at` | `timestamptz` | No | 생성 기록 생성 시각. `now()` 기본값 |
 | `updated_at` | `timestamptz` | No | 생성 기록 수정 시각. status·URL 변경 시 갱신 |
@@ -106,6 +110,8 @@ create table public.emoticon_generations (
   final_prompt text,
   status text not null default 'generating'
     check (status in ('generating', 'completed', 'failed')),
+  saved_to_gallery boolean not null default false,
+  is_favorite boolean not null default false,
   error_message text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

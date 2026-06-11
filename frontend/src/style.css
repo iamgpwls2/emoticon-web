@@ -56,11 +56,54 @@ body,
 #app {
   width: 100%;
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   background: linear-gradient(180deg, #f3efff 0%, #ffffff 55%, #f7f4ff 100%);
+}
+
+body.body-scroll-locked {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.emoticon-drag-ghost {
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #cbb8ff;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(80, 60, 160, 0.2);
+  pointer-events: none;
+}
+
+.emoticon-drag-ghost__icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.emoticon-drag-ghost__badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #6d3df2;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
 }
 
 h1,
@@ -433,7 +476,7 @@ code {
   justify-content: flex-start;
   flex-grow: 1;
   width: 100%;
-  padding: 48px 20px 72px;
+  padding: 48px 0 72px;
   overflow-x: hidden;
   text-align: center;
   background:
@@ -520,9 +563,6 @@ code {
 .auth-page--register .auth-page__content {
   position: relative;
   z-index: 1;
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
 }
 
 .auth-page--register .auth-page__intro {
@@ -723,11 +763,10 @@ code {
 
 @media (max-width: 900px) {
   .auth-page--register {
-    padding: 40px 20px 56px;
+    padding: 40px 0 56px;
   }
 
   .auth-page--register .auth-card--register {
-    width: calc(100% - 40px);
     max-width: none;
     padding: 40px 32px;
   }
@@ -735,11 +774,10 @@ code {
 
 @media (max-width: 600px) {
   .auth-page--register {
-    padding: 32px 16px 48px;
+    padding: 32px 0 48px;
   }
 
   .auth-page--register .auth-card--register {
-    width: calc(100% - 24px);
     padding: 28px 20px;
     border-radius: 22px;
   }

@@ -50,7 +50,7 @@ function handleSupabaseError(action, error) {
 }
 
 const MY_GENERATIONS_LIST_COLUMNS =
-  'id, collection_id, status, saved_to_gallery, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
+  'id, collection_id, status, saved_to_gallery, is_favorite, original_image_url, generated_image_url, emotion, motion, input_text, story_prompt, final_prompt, created_at, updated_at';
 
 function mapGenerationListItem(row) {
   return {
@@ -58,6 +58,7 @@ function mapGenerationListItem(row) {
     collectionId: row.collection_id ?? null,
     status: row.status,
     savedToGallery: row.saved_to_gallery === true,
+    isFavorite: row.is_favorite === true,
     originalImageUrl: row.original_image_url,
     generatedImageUrl: row.generated_image_url,
     emotion: row.emotion,
@@ -73,7 +74,7 @@ function mapGenerationListItem(row) {
 /**
  * 로그인 사용자의 emoticon_generations 목록을 created_at 최신순으로 조회합니다.
  *
- * @param {{ userId: string, page: number, limit: number, collectionId?: string | null }} params
+ * @param {{ userId: string, page: number, limit: number, collectionId?: string | null, favorite?: boolean }} params
  * @returns {Promise<{ items: object[], total: number }>}
  */
 export async function listMyGenerations({
@@ -81,6 +82,7 @@ export async function listMyGenerations({
   page,
   limit,
   collectionId,
+  favorite,
 }) {
   const resolvedUserId = assertNonEmptyString(userId, 'userId');
   const resolvedPage = Number.isInteger(page) && page >= 1 ? page : 1;
@@ -93,6 +95,10 @@ export async function listMyGenerations({
     .select(MY_GENERATIONS_LIST_COLUMNS, { count: 'exact' })
     .eq('user_id', resolvedUserId)
     .eq('saved_to_gallery', true);
+
+  if (favorite === true) {
+    query = query.eq('is_favorite', true);
+  }
 
   if (collectionId === 'uncategorized') {
     query = query.is('collection_id', null);
@@ -469,4 +475,48 @@ export async function moveGenerationToCollection({
   item.generatedImageUrl = refreshedUrl;
 
   return item;
+}
+
+/**
+ * 생성 기록의 즐겨찾기 상태를 갱신합니다.
+ *
+ * @param {{ userId: string, generationId: string, isFavorite: boolean }} params
+ * @returns {Promise<{ id: string, isFavorite: boolean }>}
+ */
+export async function updateGenerationFavorite({
+  userId,
+  generationId,
+  isFavorite,
+}) {
+  const resolvedUserId = assertNonEmptyString(userId, 'userId');
+  const resolvedGenerationId = assertNonEmptyString(generationId, 'generationId');
+
+  if (typeof isFavorite !== 'boolean') {
+    throw createServiceError('isFavorite must be a boolean.');
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from(EMOTICON_GENERATIONS_TABLE)
+    .update({
+      is_favorite: isFavorite,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', resolvedGenerationId)
+    .eq('user_id', resolvedUserId)
+    .eq('saved_to_gallery', true)
+    .select('id, is_favorite')
+    .maybeSingle();
+
+  if (error) {
+    handleSupabaseError('update favorite', error);
+  }
+
+  if (!data) {
+    throw createNotFoundError('Generation not found.');
+  }
+
+  return {
+    id: data.id,
+    isFavorite: data.is_favorite === true,
+  };
 }

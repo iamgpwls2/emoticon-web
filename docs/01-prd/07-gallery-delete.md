@@ -10,6 +10,7 @@
 - 2026-06-02 (초안)
 - 2026-06-07 (Day 9 — 갤러리 조회 API·GalleryPage 반영)
 - 2026-06-07 (Day 10 — 삭제 API·EmoticonCard 삭제 UI 반영)
+- 2026-06-11 (즐겨찾기 DB 연동 — `is_favorite` · `PATCH /api/generations/:id/favorite`)
 
 ## 스택 전제
 
@@ -130,6 +131,61 @@
 
 ---
 
+## 즐겨찾기 (DB 연동)
+
+### 목적
+
+- 갤러리 카드 **별표(☆/★)** 와 왼쪽 사이드바 **즐겨찾기** 메뉴 UI는 유지합니다.
+- 즐겨찾기 상태는 `emoticon_generations.is_favorite`에 저장하며, **localStorage는 사용하지 않습니다.**
+
+### API
+
+| 항목 | 값 |
+|------|-----|
+| 목록 | `GET /api/generations/me?favorite=true` — `isFavorite: true` 항목만 |
+| 변경 | `PATCH /api/generations/:id/favorite` — body `{ "isFavorite": boolean }` |
+| 인증 | `Authorization: Bearer {access_token}` 필수 |
+| 소유권 | `id` + `req.user.id` + `saved_to_gallery = true` 일치 row만 갱신 — 타인·미존재 → `404` |
+
+### 카드 즐겨찾기 UI (`EmoticonCard`)
+
+| 항목 | 요구사항 |
+|------|----------|
+| 버튼 | 카드 메타 영역 **별표** — 비활성 `☆` · 활성 `★` |
+| 클릭 | `toggle-favorite` 이벤트 → `GalleryPage.handleToggleFavorite` |
+| 요청 중 | 해당 카드 별표 버튼 `disabled` · `aria-busy` |
+| 성공 | `item.isFavorite` 갱신 · 추가 시 토스트 「즐겨찾기에 추가했습니다.」 |
+| 실패 | 별표 상태 **이전 값으로 롤백** · 토스트로 오류 메시지 |
+| 즐겨찾기 폴더 | 해제 시 목록에서 해당 카드 **즉시 제거** |
+
+### 사이드바 · 모바일 칩
+
+| 항목 | 동작 |
+|------|------|
+| 즐겨찾기 메뉴 | `favoriteCount` — 서버 `GET ...?favorite=true&limit=1`의 `total` 기준 |
+| 폴더 선택 | `favorite` 폴더 선택 시 API `favorite=true`로 목록 fetch (클라이언트 필터 아님) |
+| 더 보기 | 즐겨찾기 폴더에서도 `hasMore` 기준 pagination 지원 |
+
+### 데이터 흐름
+
+```txt
+[별 클릭] → optimistic UI (isFavorite 토글)
+  → PATCH /api/generations/:id/favorite
+    → 성공: 서버 응답 반영 · favoriteCount 갱신
+    → 실패: isFavorite 롤백 · 토스트 오류
+```
+
+### 구현 경로
+
+| 구분 | 경로 |
+|------|------|
+| DB | `supabase/migrations/20260611_01_add_is_favorite_to_generations.sql` |
+| Frontend composable | `frontend/src/composables/useFavorites.js` |
+| Frontend service | `generation.service.js` → `patchGenerationFavorite()`, `fetchMyGenerations({ favorite })` |
+| Backend service | `generation.service.js` → `updateGenerationFavorite`, `listMyGenerations({ favorite })` |
+
+---
+
 ## Day 9 검증 체크리스트
 
 - [ ] `/gallery` — 로그인 사용자만 접근
@@ -152,11 +208,23 @@
 - [ ] `GET /api/generations/me` · 「더 보기」 기존 동작 유지
 - [ ] 모바일에서 삭제 버튼 레이아웃 정상
 
+## 즐겨찾기 검증 체크리스트
+
+- [ ] 별 클릭 시 `PATCH /api/generations/:id/favorite` 호출 · body에 `userId` 없음
+- [ ] 요청 중 해당 카드 별표만 disabled
+- [ ] 성공 시 새로고침 후에도 즐겨찾기 상태 유지 (DB)
+- [ ] 실패 시 별표 이전 상태로 복원 · 오류 토스트
+- [ ] 즐겨찾기 폴더 — `?favorite=true` 목록만 표시
+- [ ] 즐겨찾기 폴더에서 해제 시 카드 즉시 제거
+- [ ] 사이드바·모바일 칩 즐겨찾기 개수 표시
+- [ ] 타 사용자 generation id → `404`
+- [ ] localStorage `emoticon-web:favorite-ids` 미사용
+
 ---
 
 ## 관련 문서
 
-- API: `02-contracts/api-contract.md` (`GET /api/generations/me`, `DELETE /api/generations/:id`)
+- API: `02-contracts/api-contract.md` (`GET /api/generations/me`, `PATCH /api/generations/:id/favorite`, `DELETE /api/generations/:id`)
 - Storage: `02-contracts/storage-policy.md`
 - 디자인: `03-design/design-guide.md` (Day 9)
 - 보안: `04-security/auth-rls-policy.md` (갤러리 조회·삭제)

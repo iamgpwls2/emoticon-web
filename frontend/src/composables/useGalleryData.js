@@ -15,6 +15,7 @@ export function useGalleryData({
   loadCollections,
   onResetStart,
   onResetExternal,
+  onFavoriteTotalLoaded,
 }) {
   const items = ref([])
   const page = ref(1)
@@ -27,13 +28,20 @@ export function useGalleryData({
 
   const lastLoadedUserId = ref(null)
 
+  function isFavoriteFolderSelected() {
+    return selectedFolderId.value === FOLDER_ID.FAVORITE
+  }
+
   /**
    * selectedFolderId를 GET /api/generations/me 의 collectionId 쿼리값으로 변환합니다.
    * - 'uncategorized' → 'uncategorized'
    * - 'collection:{uuid}' → uuid
-   * - 'all' / 'favorite' → undefined (서버가 전체 목록 반환)
+   * - 'all' / 'favorite' → undefined
    */
   function resolveCollectionIdForFetch() {
+    if (isFavoriteFolderSelected()) {
+      return undefined
+    }
     if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) {
       return FOLDER_ID.UNCATEGORIZED
     }
@@ -106,6 +114,7 @@ export function useGalleryData({
         page: nextPage,
         limit: PAGE_LIMIT,
         collectionId: resolveCollectionIdForFetch(),
+        favorite: isFavoriteFolderSelected() ? true : undefined,
       })
 
       items.value = append ? [...items.value, ...result.items] : result.items
@@ -116,6 +125,9 @@ export function useGalleryData({
       total.value = fetchedTotal
       if (!append) {
         syncFolderListCount(fetchedTotal)
+        if (isFavoriteFolderSelected()) {
+          onFavoriteTotalLoaded?.(fetchedTotal)
+        }
       }
     } catch (err) {
       if (!append) {

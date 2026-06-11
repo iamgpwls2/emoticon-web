@@ -87,7 +87,7 @@ async function handleSubmit() {
       <span class="auth-page__dots auth-page__dots--2" />
     </div>
 
-    <div class="auth-page__inner">
+    <div class="auth-page__inner app-container">
       <header class="auth-page__header">
         <h1 class="auth-page__title">로그인</h1>
         <p class="auth-page__subtitle">계정으로 로그인해 주세요.</p>

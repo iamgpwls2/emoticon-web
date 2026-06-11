@@ -1,0 +1,82 @@
+---
+description: "Express backend rules for routes, controllers, services, validators, auth middleware, and API security"
+globs:
+  - backend/src/**/*.js
+  - backend/src/**/*.ts
+  - server/src/**/*.js
+  - server/src/**/*.ts
+alwaysApply: false
+---
+
+# Backend Rules — Express
+
+## 스택
+
+Express 5, ES modules (`backend/src/`)  
+진입점: `index.js`, 앱 설정: `app.js` · 설정: `config/env.js`, `config/supabase.js`
+
+## 구조 원칙
+
+Backend는 아래 흐름을 우선합니다.
+
+```
+routes → middlewares → controllers → services → validators/utils
+```
+
+| 레이어 | 책임 |
+|--------|------|
+| `routes/` | URL, HTTP method, middleware 연결만 |
+| `controllers/` | req/res 처리, 상태 코드, 응답 포맷 |
+| `services/` | 외부 API, Supabase DB/Storage, 핵심 비즈니스 로직 |
+| `validators/` | 입력값 검증 (`shared.validation.js` 패턴) |
+| `utils/` | 공통 유틸 함수만 |
+
+- 비동기 라우트: `utils/asyncHandler.js` 래핑
+- API 계약: `docs/02-contracts/api-contract.md`, `error-response.md`
+
+## 인증 원칙
+
+- 보호 API는 `middlewares/auth.middleware.js`의 **`requireAuth`** 를 반드시 거칩니다.
+- JWT 검증: `supabase.auth.getUser(token)` → `req.user`, `req.accessToken` 설정
+- 인증된 사용자 ID는 **`req.user.id`에서만** 가져옵니다.
+- client body/query/header의 `user_id`·`userId`는 **신뢰하지 않습니다.**
+- 사용자별 데이터 조회·생성·삭제에는 **`user_id = req.user.id`** 조건을 반드시 적용합니다.
+
+> service role + RLS bypass 시 app-level 필터: `supabase-security.mdc` 참조
+
+## API key 원칙
+
+- OpenAI/LLM·Image API key는 **backend 환경변수에서만** 읽습니다 (`LLM_API_KEY`, `IMAGE_GENERATION_API_KEY`).
+- Supabase service role key는 **backend 환경변수에서만** 읽습니다 (`SUPABASE_SECRET_KEY`).
+- API key를 **로그로 출력하지 않습니다.**
+- `.env` 실제 파일 내용을 코드나 문서에 **복사하지 않습니다.**
+- `.env.example`에는 **키 이름만** 남기고 실제 값은 넣지 않습니다.
+
+> 키 분리 표·frontend 노출 금지: `supabase-security.mdc`, `docs/04-security/api-key-policy.md`
+
+## 오류 처리
+
+- controller에서는 사용자에게 **안전한 오류 메시지**만 반환합니다 (`utils/controllerError.js`, `utils/httpError.js`, `middlewares/error.middleware.js`).
+- 내부 오류 상세, 외부 API 응답 원문, secret 값은 응답으로 **노출하지 않습니다.**
+- 로그에는 디버깅 가능한 **최소 정보**만 남깁니다.
+- user ID, generation ID 등 추적 값은 남기되 **secret/token은 제외**합니다.
+
+## 이미지 업로드
+
+구현 참고: `middlewares/imageUpload.middleware.js`, `services/upload.service.js`
+
+- 허용 확장자: **png, jpg, jpeg, webp**
+- 허용 **MIME type**을 확장자와 함께 검증합니다 (`image/png`, `image/jpeg`, `image/webp`).
+- 파일 크기 제한을 적용합니다 (현재 **5MB**).
+- Storage 경로: `{req.user.id}/{timestamp}-{uuid}.{ext}` (`user-uploads` bucket).
+- 업로드된 파일 URL이 다른 사용자 데이터와 섞이지 않게 **user prefix**를 고정합니다.
+
+## 이미지 생성
+
+구현 참고: `services/llm.service.js`, `imageGeneration.service.js`, `generationOrchestration.service.js`
+
+- 생성 요청 시 필수 입력값을 `validators/`에서 검증합니다.
+- reference image가 있으면 **캐릭터 보존 프롬프트 가드**를 적용합니다 (`llm.service.js` 패턴).
+- 이미지 API에 전달된 프롬프트와 DB 저장용 프롬프트가 다르면 **의도를 주석 또는 로그**로 명확히 합니다.
+- 중복 생성 요청 방지는 frontend disabled 처리와 **backend validation**을 함께 고려합니다.
+- 생성 결과 Storage: `{req.user.id}/{generation_id}.png` (`generated-emoticons` bucket).

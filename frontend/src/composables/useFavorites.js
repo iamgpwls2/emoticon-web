@@ -1,68 +1,99 @@
-import { computed, ref, watch } from 'vue'
-
-const STORAGE_KEY = 'emoticon-web:favorite-ids'
-
-function readFavoriteIds() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed)
-      ? parsed.filter((id) => typeof id === 'string' && id.trim())
-      : []
-  } catch {
-    return []
-  }
-}
-
-function writeFavoriteIds(ids) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
-}
+import { ref } from 'vue'
+import {
+  fetchMyGenerations,
+  patchGenerationFavorite,
+} from '../services/generation.service.js'
+import { toUserErrorMessage } from '../utils/apiError.js'
 
 /**
- * 즐겨찾기는 프론트 localStorage 기반입니다.
- * TODO: 백엔드 즐겨찾기 API 연동 (PATCH /api/generations/:id/favorite 등)
+ * 갤러리 즐겨찾기 상태를 backend API(DB) 기준으로 관리합니다.
  */
 export function useFavorites() {
-  const favoriteIds = ref(readFavoriteIds())
+  const favoriteCount = ref(0)
+  const togglingIds = ref([])
+  const favoriteError = ref('')
 
-  watch(
-    favoriteIds,
-    (ids) => {
-      writeFavoriteIds(ids)
-    },
-    { deep: true }
-  )
+  function isToggling(id) {
+    return togglingIds.value.includes(id)
+  }
 
-  const favoriteCount = computed(() => favoriteIds.value.length)
-
-  function toggleFavorite(id) {
-    if (!id?.trim()) return
-
-    if (favoriteIds.value.includes(id)) {
-      favoriteIds.value = favoriteIds.value.filter((item) => item !== id)
-      return false
+  function setToggling(id, active) {
+    if (active) {
+      if (!togglingIds.value.includes(id)) {
+        togglingIds.value = [...togglingIds.value, id]
+      }
+      return
     }
 
-    favoriteIds.value = [...favoriteIds.value, id]
-    return true
+    togglingIds.value = togglingIds.value.filter((item) => item !== id)
   }
 
-  function filterFavoriteItems(items) {
-    const idSet = new Set(favoriteIds.value)
-    return items.filter((item) => idSet.has(item.id))
+  async function loadFavoriteCount() {
+    try {
+      const result = await fetchMyGenerations({
+        page: 1,
+        limit: 1,
+        favorite: true,
+      })
+      favoriteCount.value = result.total ?? 0
+    } catch {
+      favoriteCount.value = 0
+    }
   }
 
-  function clearFavorites() {
-    favoriteIds.value = []
+  function syncFavoriteCountFromTotal(total) {
+    if (typeof total === 'number' && total >= 0) {
+      favoriteCount.value = total
+    }
+  }
+
+  /**
+   * @param {string} id
+   * @param {boolean} currentIsFavorite
+   * @returns {Promise<boolean>} 갱신된 isFavorite 값
+   */
+  async function toggleFavorite(id, currentIsFavorite) {
+    if (!id?.trim() || isToggling(id)) {
+      return currentIsFavorite
+    }
+
+    const nextIsFavorite = !currentIsFavorite
+    setToggling(id, true)
+    favoriteError.value = ''
+
+    try {
+      const result = await patchGenerationFavorite(id, nextIsFavorite)
+
+      if (result.isFavorite) {
+        favoriteCount.value += 1
+      } else {
+        favoriteCount.value = Math.max(0, favoriteCount.value - 1)
+      }
+
+      return result.isFavorite
+    } catch (error) {
+      favoriteError.value = toUserErrorMessage(
+        error,
+        '즐겨찾기 변경에 실패했습니다. 다시 시도해 주세요.'
+      )
+      throw error
+    } finally {
+      setToggling(id, false)
+    }
+  }
+
+  function clearFavoriteError() {
+    favoriteError.value = ''
   }
 
   return {
-    favoriteIds,
     favoriteCount,
+    togglingIds,
+    favoriteError,
+    isToggling,
+    loadFavoriteCount,
+    syncFavoriteCountFromTotal,
     toggleFavorite,
-    filterFavoriteItems,
-    clearFavorites,
+    clearFavoriteError,
   }
 }

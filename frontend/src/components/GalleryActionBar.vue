@@ -27,6 +27,7 @@ defineEmits([
   'delete',
   'download',
   'toggle-select-all',
+  'clear-selection',
 ])
 </script>
 
@@ -64,6 +65,15 @@ defineEmits([
         @click="$emit('download')"
       >
         {{ bulkDownloading ? '다운로드 중...' : 'PNG 다운로드' }}
+      </button>
+
+      <button
+        type="button"
+        class="gallery-action-button"
+        :disabled="selectedCount === 0"
+        @click="$emit('clear-selection')"
+      >
+        선택 해제
       </button>
 
       <button

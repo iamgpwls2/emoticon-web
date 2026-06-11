@@ -13,6 +13,7 @@
 - 2026-06-06 (Day 7 — `POST /api/generations` 명세 반영)
 - 2026-06-07 (Day 9 — `GET /api/generations/me` 명세 반영)
 - 2026-06-07 (Day 10 — `DELETE /api/generations/:id` 명세 반영)
+- 2026-06-11 (갤러리 즐겨찾기 — `isFavorite` 목록 필드 · `PATCH /api/generations/:id/favorite` · `?favorite=true` 필터)
 
 ## 스택 전제
 
@@ -45,6 +46,7 @@
 | **POST** | **`/api/generations`** | **Bearer** | **7** | **이미지 생성 · DB·Storage 저장** |
 | **GET** | **`/api/generations/me`** | **Bearer** | **9** | **내 생성 기록 목록 (pagination)** |
 | **DELETE** | **`/api/generations/:id`** | **Bearer** | **10** | **내 생성 기록 단건 삭제** |
+| **PATCH** | **`/api/generations/:id/favorite`** | **Bearer** | **11** | **즐겨찾기 상태 변경** |
 | — | Download | Bearer | 이후 | 다운로드 |
 
 ---
@@ -650,11 +652,16 @@ GET /api/generations/me?page=1&limit=12
 |----------|------|--------|------|
 | `page` | integer | `1` | 페이지 번호. **최소 1** (잘못된 값은 1로 처리) |
 | `limit` | integer | `12` | 페이지 크기. **최소 1, 최대 50** |
+| `collectionId` | string | — | 폴더 필터. uuid 또는 `uncategorized`(미분류) |
+| `favorite` | boolean | — | `true`이면 `is_favorite = true`인 갤러리 항목만 조회 |
 
 예시:
 
 ```bash
 curl -i "http://localhost:4000/api/generations/me?page=1&limit=12" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+
+curl -i "http://localhost:4000/api/generations/me?favorite=true&page=1&limit=12" \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
@@ -672,6 +679,9 @@ curl -i "http://localhost:4000/api/generations/me?page=1&limit=12" \
     {
       "id": "3f4c9f1e-1234-4567-89ab-111122223333",
       "status": "completed",
+      "savedToGallery": true,
+      "isFavorite": false,
+      "collectionId": null,
       "originalImageUrl": "https://...",
       "generatedImageUrl": "https://...supabase.co/storage/v1/object/sign/...",
       "emotion": "기쁨",
@@ -758,6 +768,133 @@ DB 조회 실패 등:
 | DB | `generation.service.js` → `listMyGenerations` — `.eq('user_id', userId)` |
 
 Middleware chain: `requireAuth` → `getMyGenerations`
+
+목록 API는 `saved_to_gallery = true`인 row만 반환합니다. `favorite=true` 쿼리는 추가로 `is_favorite = true`를 필터합니다.
+
+---
+
+## PATCH /api/generations/:id/favorite
+
+로그인 사용자의 **본인** `emoticon_generations` row 1건의 즐겨찾기 상태를 갱신합니다.
+
+> 라우트 등록 순서: **`GET /me`**, **`POST /bulk-delete`** 보다 뒤 · **`DELETE /:id`** 보다 앞 (`generation.routes.js`)
+
+---
+
+### 1. Endpoint
+
+```http
+PATCH /api/generations/:id/favorite
+```
+
+---
+
+### 2. 인증
+
+`Authorization: Bearer <access_token>` 필수. 미인증·무효 토큰 → `401`.
+
+---
+
+### 3. Path Parameters
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | uuid | 대상 `emoticon_generations.id` |
+
+---
+
+### 4. Request Body
+
+`Content-Type: application/json`
+
+```json
+{
+  "isFavorite": true
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `isFavorite` | boolean | Yes | `true` 즐겨찾기 추가 · `false` 해제 |
+
+예시:
+
+```bash
+curl -i -X PATCH "http://localhost:4000/api/generations/GENERATION_ID/favorite" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"isFavorite": true}'
+```
+
+> 클라이언트는 body·query에 `userId`를 보내지 않습니다 — server는 `req.user.id`만 사용합니다.
+
+---
+
+### 5. Success Response 200
+
+```json
+{
+  "id": "3f4c9f1e-1234-4567-89ab-111122223333",
+  "isFavorite": true
+}
+```
+
+---
+
+### 6. Error Response
+
+#### 400 Bad Request
+
+`isFavorite`가 boolean이 아닌 경우:
+
+```json
+{
+  "message": "입력값을 확인해 주세요.",
+  "errors": [
+    {
+      "field": "isFavorite",
+      "message": "isFavorite는 boolean 값이어야 합니다."
+    }
+  ]
+}
+```
+
+#### 401 Unauthorized
+
+로그인하지 않았거나 인증 토큰이 유효하지 않은 경우 반환한다.
+
+#### 404 Not Found
+
+`id`가 존재하지 않거나, **다른 사용자 소유**이거나, `saved_to_gallery = false`인 경우 동일 메시지:
+
+```json
+{
+  "message": "이모티콘을 찾을 수 없습니다."
+}
+```
+
+#### 500 Internal Server Error
+
+```json
+{
+  "message": "즐겨찾기 변경에 실패했습니다. 다시 시도해 주세요."
+}
+```
+
+---
+
+### Frontend / Backend 처리
+
+| 구분 | 경로 |
+|------|------|
+| Frontend composable | `frontend/src/composables/useFavorites.js` |
+| Frontend service | `frontend/src/services/generation.service.js` → `patchGenerationFavorite()` |
+| Frontend UI | `GalleryPage.vue` · `EmoticonCard.vue` 별표 버튼 |
+| Backend route | `generation.routes.js` — `PATCH /:id/favorite` |
+| Backend controller | `generation.controller.js` → `patchGenerationFavorite` |
+| Backend service | `generation.service.js` → `updateGenerationFavorite` — `.eq('id', id).eq('user_id', req.user.id)` |
+
+Middleware chain: `requireAuth` → `validateGenerationIdParam` → `validatePatchGenerationFavorite` → `patchGenerationFavorite`
 
 ---
 

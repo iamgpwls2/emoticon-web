@@ -5,6 +5,7 @@ import {
   deleteGenerations as deleteGenerationsController,
   getMyGenerations as getMyGenerationsController,
   patchGenerationCollection as patchGenerationCollectionController,
+  patchGenerationFavorite as patchGenerationFavoriteController,
   patchGenerationGallery as patchGenerationGalleryController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
@@ -15,6 +16,7 @@ import {
   validateGenerationIdParam,
   validateListMyGenerationsQuery,
   validateMoveGenerationCollection,
+  validatePatchGenerationFavorite,
 } from '../validators/generation.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -73,6 +75,17 @@ router.patch(
   asyncHandler(requireAuth),
   validateGenerationIdParam,
   asyncHandler(patchGenerationGalleryController)
+);
+
+/**
+ * PATCH /api/generations/:id/favorite
+ */
+router.patch(
+  '/:id/favorite',
+  asyncHandler(requireAuth),
+  validateGenerationIdParam,
+  validatePatchGenerationFavorite,
+  asyncHandler(patchGenerationFavoriteController)
 );
 
 /**

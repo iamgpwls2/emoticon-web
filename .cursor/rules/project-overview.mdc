@@ -1,0 +1,82 @@
+---
+description: "Emoticon Web global project overview, architecture, and working rules"
+alwaysApply: true
+---
+
+# Emoticon Web — Project Rules
+
+## 프로젝트 개요
+
+Emoticon Web은 **사용자 사진 업로드 → LLM 프롬프트 정제 → AI 이모티콘 이미지 생성 → 생성 기록 저장 → 갤러리 관리** 흐름을 가진 웹 서비스입니다.
+
+주요 스택:
+- Frontend: Vue 3 + Vite (`frontend/`, port **5173**)
+- Backend: Express (`backend/`, port **4000**)
+- Auth / DB / Storage: Supabase
+- Local Dev: Docker Compose
+
+```
+[Browser] Vue (frontend/src)
+    │  Supabase Auth (anon/publishable, VITE_*)
+    │  REST → Express (VITE_API_BASE_URL)
+    ▼
+[Express] backend/src
+    │  Secret key / LLM·생성 API (server-only)
+    ▼
+[Supabase] Auth + Postgres(RLS) + Storage(user_id/...)
+```
+
+| 레이어 | 책임 |
+|--------|------|
+| Frontend | UI, Auth UI, 업로드/프리뷰, loading/error/success 상태 |
+| Backend | 프롬프트 정제·이미지 생성·다운로드 프록시, secret API 호출 |
+| Supabase | 인증, 사용자별 데이터·파일 저장 |
+
+## Cursor 작업 원칙
+
+- 작업 전 관련 파일을 먼저 읽고 구조를 파악합니다.
+- 기존 폴더 구조, 코드 스타일, 네이밍을 우선 따릅니다.
+- 불필요한 대규모 리팩토링을 하지 않습니다.
+- 변경 범위는 요청 기능에 필요한 **최소 단위**로 제한합니다.
+- 새 파일이 필요하면 역할이 명확할 때만 추가합니다.
+- 파일이 커지면 역할별 컴포넌트, composable, service, util로 분리합니다.
+- 컴포넌트와 서비스 파일은 가능하면 **300줄 이하**를 유지합니다.
+- 기능 구현 후 Docker Compose 환경 기준으로 확인 명령어를 제안합니다.
+
+## 주요 문서
+
+프로젝트 구조나 정책이 불명확하면 먼저 아래 문서를 확인합니다.
+
+- `docs/**/00-01-overview.md` (구조·책임 분리 — **최우선**)
+- `docs/01-prd/`
+- `docs/02-contracts/` (API·DB·Storage 계약)
+- `docs/04-security/`
+- UI 스펙: `docs/03-design/`
+
+## 핵심 보안 원칙
+
+- API key, secret, token은 **frontend에 노출하지 않습니다.**
+- `VITE_*`에는 Supabase anon/publishable key처럼 **공개 가능한 값만** 둡니다.
+- Supabase service role key는 **backend 환경변수에서만** 사용합니다.
+- 클라이언트가 전달한 `user_id`·`userId`는 신뢰하지 않습니다.
+- 사용자 식별은 backend `requireAuth`의 **`req.user.id`만** 신뢰합니다.
+- 다른 사용자의 이미지·생성 기록·갤러리에 접근할 수 없도록 **사용자별 데이터 분리**를 유지합니다.
+
+> 키 분리 표·RLS·Storage path·service role 필터 등 상세: `.cursor/rules/supabase-security.mdc`, `docs/04-security/*`
+
+## Docker 기준
+
+- 로컬 실행은 직접 `npm run dev`보다 **Docker Compose 흐름을 우선**합니다.
+- 패키지 설치, 서버 재시작, 로그 확인은 Docker 환경 기준으로 안내합니다.
+- 환경 변수: `.env.example` 참고 — 실제 키는 `frontend/.env`, `backend/.env`만 (git 제외)
+
+기본 확인 명령어:
+- `docker compose up --build`
+- `docker compose logs -f backend`
+- `docker compose logs -f frontend`
+
+## 역할별 규칙
+
+- Vue UI·상태·라우팅: `frontend-vue.mdc`
+- Express API·미들웨어·서비스: `backend-express.mdc`
+- Auth, Storage, DB, RLS, API key: `supabase-security.mdc`

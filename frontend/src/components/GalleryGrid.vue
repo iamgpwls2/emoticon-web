@@ -34,7 +34,7 @@ defineProps({
     type: String,
     default: '',
   },
-  favoriteIds: {
+  togglingIds: {
     type: Array,
     default: () => [],
   },
@@ -93,7 +93,8 @@ defineEmits([
       :selection-mode="selectionMode"
       :selected="selectedIds.includes(item.id)"
       :dragging="draggingId === item.id"
-      :favorite="favoriteIds.includes(item.id)"
+      :favorite="item.isFavorite === true"
+      :favorite-toggling="togglingIds.includes(item.id)"
       :view-mode="viewMode"
       :folder-name="
         item.collectionId

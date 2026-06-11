@@ -13,7 +13,7 @@ const startPath = computed(() =>
 
 <template>
   <header class="app-header">
-    <div class="app-header__inner">
+    <div class="app-header__inner app-container">
       <router-link to="/" class="app-header__brand">
         <span class="app-header__logo-icon" aria-hidden="true">
           <LogoIcon />

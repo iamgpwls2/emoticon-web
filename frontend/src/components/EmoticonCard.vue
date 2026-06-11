@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import Tooltip from './Tooltip.vue'
 import { downloadImage } from '../utils/downloadImage.js'
 
 const props = defineProps({
@@ -52,6 +53,10 @@ const props = defineProps({
     default: false,
   },
   favorite: {
+    type: Boolean,
+    default: false,
+  },
+  favoriteToggling: {
     type: Boolean,
     default: false,
   },
@@ -131,12 +136,6 @@ async function handleDownloadClick() {
 
 function handleDeleteClick() {
   if (props.deleting || props.selectionMode) return
-
-  const confirmed = window.confirm(
-    '이 이모티콘을 삭제할까요?\n삭제하면 복구할 수 없습니다.'
-  )
-  if (!confirmed) return
-
   emit('delete', props.id)
 }
 
@@ -165,6 +164,7 @@ function handleDragEnd() {
 
 function handleToggleFavorite(event) {
   event.stopPropagation()
+  if (props.favoriteToggling) return
   emit('toggle-favorite', props.id)
 }
 </script>
@@ -185,20 +185,21 @@ function handleToggleFavorite(event) {
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
   >
-    <label
-      v-if="selectionMode"
-      class="emoticon-card__select"
-      @click.stop
-    >
-      <input
-        type="checkbox"
-        :checked="selected"
-        :disabled="deleting || moving"
-        @change="handleToggleSelect"
-      />
-    </label>
-
     <div class="emoticon-card__preview-wrap">
+      <label
+        v-if="selectionMode"
+        class="emoticon-card__select"
+        @click.stop
+      >
+        <input
+          type="checkbox"
+          :checked="selected"
+          :disabled="deleting || moving"
+          aria-label="이미지 선택"
+          @change="handleToggleSelect"
+        />
+      </label>
+
       <img
         v-if="hasImageUrl && !imageLoadFailed"
         :src="trimmedImageUrl"
@@ -220,21 +221,59 @@ function handleToggleFavorite(event) {
           }}
         </p>
       </div>
+
+      <div v-if="!selectionMode" class="emoticon-card__overlay-actions">
+        <Tooltip label="PNG 다운로드">
+          <button
+            type="button"
+            class="emoticon-card__icon-btn"
+            :disabled="isDownloadDisabled || moving"
+            :aria-busy="isDownloading"
+            aria-label="PNG 다운로드"
+            @click.stop="handleDownloadClick"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 4v10m0 0l3.5-3.5M12 14l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </button>
+        </Tooltip>
+
+        <Tooltip label="삭제">
+          <button
+            type="button"
+            class="emoticon-card__icon-btn emoticon-card__icon-btn--danger"
+            :disabled="deleting || moving"
+            :aria-busy="deleting"
+            aria-label="삭제"
+            @click.stop="handleDeleteClick"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 7h12M9 7V5h6v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M8 7l1 12h6l1-12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </Tooltip>
+      </div>
     </div>
 
     <div class="emoticon-card__body">
       <div class="emoticon-card__meta-row">
         <p v-if="metaLine" class="emoticon-card__meta">{{ metaLine }}</p>
-        <button
-          type="button"
-          class="emoticon-card__favorite"
-          :class="{ 'emoticon-card__favorite--active': favorite }"
-          :aria-pressed="favorite"
-          :aria-label="favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
-          @click="handleToggleFavorite"
-        >
-          {{ favorite ? '★' : '☆' }}
-        </button>
+        <Tooltip :label="favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'">
+          <button
+            type="button"
+            class="emoticon-card__favorite"
+            :class="{ 'emoticon-card__favorite--active': favorite }"
+            :aria-pressed="favorite"
+            :aria-busy="favoriteToggling"
+            :disabled="favoriteToggling"
+            :aria-label="favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'"
+            @click="handleToggleFavorite"
+          >
+            {{ favorite ? '★' : '☆' }}
+          </button>
+        </Tooltip>
       </div>
 
       <p v-if="inputText?.trim()" class="emoticon-card__text">
@@ -258,27 +297,6 @@ function handleToggleFavorite(event) {
           {{ folderName.trim() }}
         </span>
       </div>
-    </div>
-
-    <div v-if="!selectionMode" class="emoticon-card__actions">
-      <button
-        type="button"
-        class="emoticon-card__download-btn"
-        :disabled="isDownloadDisabled || moving"
-        :aria-busy="isDownloading"
-        @click.stop="handleDownloadClick"
-      >
-        {{ isDownloading ? '저장 중...' : '저장' }}
-      </button>
-      <button
-        type="button"
-        class="emoticon-card__delete-btn"
-        :disabled="deleting || moving"
-        :aria-busy="deleting"
-        @click.stop="handleDeleteClick"
-      >
-        {{ deleting ? '삭제 중...' : '삭제' }}
-      </button>
     </div>
 
     <p
@@ -312,7 +330,8 @@ function handleToggleFavorite(event) {
     opacity 0.2s ease;
 }
 
-.emoticon-card:hover {
+.emoticon-card:hover,
+.emoticon-card:focus-within {
   transform: translateY(-4px);
   box-shadow: 0 18px 42px rgba(80, 60, 160, 0.14);
 }
@@ -327,17 +346,8 @@ function handleToggleFavorite(event) {
 }
 
 .emoticon-card--selected {
-  border: 1.5px solid #8b5cf6;
+  border: 2px solid #8b5cf6;
   box-shadow: 0 18px 40px rgba(109, 61, 242, 0.16);
-}
-
-.emoticon-card--selected::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: rgba(109, 61, 242, 0.06);
-  pointer-events: none;
 }
 
 .emoticon-card--moving {
@@ -345,8 +355,8 @@ function handleToggleFavorite(event) {
 }
 
 .emoticon-card--dragging {
-  opacity: 0.6;
-  transform: scale(0.96);
+  opacity: 0.45;
+  transform: scale(0.98);
 }
 
 .emoticon-card[draggable='true'] {
@@ -357,27 +367,8 @@ function handleToggleFavorite(event) {
   cursor: grabbing;
 }
 
-.emoticon-card__select {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin: 0;
-  cursor: pointer;
-}
-
-.emoticon-card__select input {
-  width: 18px;
-  height: 18px;
-  accent-color: #6d3df2;
-}
-
 .emoticon-card__preview-wrap {
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
   border: 1px solid #ddd2ff;
@@ -391,6 +382,32 @@ function handleToggleFavorite(event) {
 .emoticon-card--list .emoticon-card__preview-wrap {
   width: 120px;
   aspect-ratio: 1;
+}
+
+.emoticon-card__select {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e4d8ff;
+  box-shadow: 0 4px 12px rgba(80, 60, 160, 0.12);
+  cursor: pointer;
+}
+
+.emoticon-card__select input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #6d3df2;
+  cursor: pointer;
 }
 
 .emoticon-card__preview {
@@ -424,6 +441,74 @@ function handleToggleFavorite(event) {
   font-size: 13px;
   line-height: 1.5;
   color: #7c86a3;
+}
+
+.emoticon-card__overlay-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.emoticon-card:hover .emoticon-card__overlay-actions,
+.emoticon-card:focus-within .emoticon-card__overlay-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.emoticon-card__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #e4d8ff;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #6d3df2;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(80, 60, 160, 0.14);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.emoticon-card__icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.emoticon-card__icon-btn:hover:not(:disabled) {
+  background: #f1ebff;
+  border-color: #cbb8ff;
+  transform: translateY(-1px);
+}
+
+.emoticon-card__icon-btn--danger {
+  color: #ff4d6d;
+  border-color: #ffc9d3;
+}
+
+.emoticon-card__icon-btn--danger:hover:not(:disabled) {
+  background: #fff1f2;
+  border-color: #ff4d6d;
+}
+
+.emoticon-card__icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .emoticon-card__body {
@@ -460,6 +545,11 @@ function handleToggleFavorite(event) {
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+}
+
+.emoticon-card__favorite:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .emoticon-card__favorite--active {
@@ -503,68 +593,17 @@ function handleToggleFavorite(event) {
   color: #9a6b00;
 }
 
-.emoticon-card__actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-}
-
-.emoticon-card--list .emoticon-card__actions {
-  margin-top: auto;
-}
-
-.emoticon-card__download-btn {
-  min-width: 82px;
-  min-height: 44px;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  word-break: keep-all;
-  color: #6d3df2;
-  background: #f1ebff;
-  cursor: pointer;
-}
-
-.emoticon-card__download-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.emoticon-card__delete-btn {
-  min-width: 0;
-  min-height: 44px;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid #ffc9d3;
-  border-radius: 12px;
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  word-break: keep-all;
-  color: #ff4d6d;
-  background: #fff5f7;
-  cursor: pointer;
-}
-
-.emoticon-card__delete-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .emoticon-card__download-error {
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
   color: #ff4d6d;
+}
+
+@media (hover: none) {
+  .emoticon-card__overlay-actions {
+    opacity: 1;
+    transform: none;
+  }
 }
 </style>

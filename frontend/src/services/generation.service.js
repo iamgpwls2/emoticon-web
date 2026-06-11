@@ -154,6 +154,7 @@ export async function fetchMyGenerations({
   page = 1,
   limit = 12,
   collectionId,
+  favorite,
 } = {}) {
   const accessToken = await resolveAccessToken(
     '이모티콘 목록을 보려면 로그인이 필요합니다.'
@@ -165,6 +166,9 @@ export async function fetchMyGenerations({
   });
   if (typeof collectionId === 'string' && collectionId.trim()) {
     query.set('collectionId', collectionId.trim());
+  }
+  if (favorite === true) {
+    query.set('favorite', 'true');
   }
 
   const response = await fetch(
@@ -285,5 +289,47 @@ export async function saveGenerationToGallery(id) {
   return {
     id: body.id,
     savedToGallery: body.savedToGallery === true,
+  };
+}
+
+/**
+ * backend PATCH /api/generations/:id/favorite 로 즐겨찾기 상태를 갱신합니다.
+ * @param {string} id
+ * @param {boolean} isFavorite
+ * @returns {Promise<{ id: string, isFavorite: boolean }>}
+ */
+export async function patchGenerationFavorite(id, isFavorite) {
+  if (!isNonEmptyString(id)) {
+    throw new Error('즐겨찾기를 변경할 이모티콘 id가 필요합니다.');
+  }
+
+  if (typeof isFavorite !== 'boolean') {
+    throw new Error('isFavorite는 boolean 값이어야 합니다.');
+  }
+
+  const accessToken = await resolveAccessToken(
+    '즐겨찾기를 변경하려면 로그인이 필요합니다.'
+  );
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/generations/${id}/favorite`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ isFavorite }),
+    }
+  );
+
+  const body = await readApiResponse(
+    response,
+    '즐겨찾기 변경에 실패했습니다. 다시 시도해 주세요.'
+  );
+
+  return {
+    id: body.id,
+    isFavorite: body.isFavorite === true,
   };
 }

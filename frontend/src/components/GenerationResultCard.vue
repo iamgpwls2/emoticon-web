@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import ErrorMessage from './ErrorMessage.vue'
 import ImageViewerModal from './ImageViewerModal.vue'
+import Tooltip from './Tooltip.vue'
 
 const props = defineProps({
   result: {
@@ -13,14 +14,6 @@ const props = defineProps({
     required: true,
   },
   isGenerating: {
-    type: Boolean,
-    default: false,
-  },
-  canRegenerate: {
-    type: Boolean,
-    default: false,
-  },
-  uploadRequired: {
     type: Boolean,
     default: false,
   },
@@ -40,13 +33,9 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  regenerateErrorMessage: {
-    type: String,
-    default: '',
-  },
 })
 
-const emit = defineEmits(['toggle', 'save', 'download', 'regenerate', 'remove'])
+const emit = defineEmits(['toggle', 'save', 'download', 'remove'])
 
 const generatedImageLoadFailed = ref(false)
 const isFinalPromptOpen = ref(false)
@@ -89,20 +78,6 @@ const isDownloadDisabled = computed(
     !hasImage.value ||
     props.isGenerating ||
     generatedImageLoadFailed.value
-)
-
-const isRegenerateDisabled = computed(
-  () => props.isGenerating || !props.canRegenerate || props.uploadRequired
-)
-
-const saveDescription = computed(() => {
-  if (props.isSaving) return '저장 중...'
-  if (props.result.savedToGallery) return '저장 완료'
-  return '갤러리에 저장'
-})
-
-const regenerateDescription = computed(() =>
-  props.isGenerating ? '생성 중...' : '다시 생성'
 )
 
 const generationInfoLines = computed(() => {
@@ -148,11 +123,6 @@ function onSave() {
 function onDownload() {
   if (isDownloadDisabled.value) return
   emit('download', props.index)
-}
-
-function onRegenerate() {
-  if (isRegenerateDisabled.value) return
-  emit('regenerate')
 }
 
 function onGeneratedImageError() {
@@ -219,15 +189,17 @@ function onCollapsedThumbClick() {
             {{ toggleIcon }}
           </span>
         </button>
-        <button
-          type="button"
-          class="generation-result-card__remove-btn"
-          aria-label="생성 결과 삭제"
-          :disabled="isGenerating"
-          @click="onRemove"
-        >
-          <span aria-hidden="true">✕</span>
-        </button>
+        <Tooltip label="삭제">
+          <button
+            type="button"
+            class="generation-result-card__remove-btn"
+            aria-label="생성 결과 삭제"
+            :disabled="isGenerating"
+            @click="onRemove"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
+        </Tooltip>
       </div>
     </div>
 
@@ -235,12 +207,13 @@ function onCollapsedThumbClick() {
       v-if="!result.isExpanded && hasImage"
       class="generation-result-card__collapsed"
     >
-      <button
-        type="button"
-        class="generation-result-card__image-btn generation-result-card__image-btn--thumb"
-        title="클릭하여 확대"
-        @click="onCollapsedThumbClick"
-      >
+      <Tooltip label="클릭하여 확대">
+        <button
+          type="button"
+          class="generation-result-card__image-btn generation-result-card__image-btn--thumb"
+          aria-label="클릭하여 확대"
+          @click="onCollapsedThumbClick"
+        >
         <img
           :src="trimmedImageUrl"
           :alt="`생성 결과 ${resultNumber}번 미리보기`"
@@ -252,32 +225,34 @@ function onCollapsedThumbClick() {
             <path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
           </svg>
         </span>
-      </button>
+        </button>
+      </Tooltip>
     </div>
 
     <div v-if="result.isExpanded" class="generation-result-card__body">
       <div class="generation-result-card__image-box">
-        <button
-          v-if="hasImage && !generatedImageLoadFailed"
-          type="button"
-          class="generation-result-card__image-btn"
-          title="클릭하여 확대"
-          @click="onExpandedImageClick"
-        >
-          <img
-            :src="trimmedImageUrl"
-            :alt="`생성 결과 ${resultNumber}번 이미지`"
-            class="generation-result-card__image"
-            @error="onGeneratedImageError"
-          />
-          <span class="generation-result-card__zoom-hint" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8" />
-              <path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
-            <span class="generation-result-card__zoom-label">클릭하여 확대</span>
-          </span>
-        </button>
+        <Tooltip v-if="hasImage && !generatedImageLoadFailed" label="클릭하여 확대">
+          <button
+            type="button"
+            class="generation-result-card__image-btn"
+            aria-label="클릭하여 확대"
+            @click="onExpandedImageClick"
+          >
+            <img
+              :src="trimmedImageUrl"
+              :alt="`생성 결과 ${resultNumber}번 이미지`"
+              class="generation-result-card__image"
+              @error="onGeneratedImageError"
+            />
+            <span class="generation-result-card__zoom-hint" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8" />
+                <path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+              <span class="generation-result-card__zoom-label">클릭하여 확대</span>
+            </span>
+          </button>
+        </Tooltip>
         <p
           v-else-if="generatedImageLoadFailed"
           class="generation-result-card__image-error"
@@ -285,6 +260,41 @@ function onCollapsedThumbClick() {
         >
           생성 이미지를 불러오지 못했습니다.
         </p>
+
+        <div
+          v-if="hasImage && !generatedImageLoadFailed"
+          class="generation-result-card__overlay-actions"
+        >
+          <Tooltip label="갤러리에 저장">
+            <button
+              type="button"
+              class="generation-result-card__icon-btn"
+              :disabled="isSaveDisabled"
+              aria-label="갤러리에 저장"
+              @click.stop="onSave"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8" />
+                <circle cx="8.5" cy="10.5" r="1.6" fill="currentColor" />
+              </svg>
+            </button>
+          </Tooltip>
+
+          <Tooltip label="PNG 다운로드">
+            <button
+              type="button"
+              class="generation-result-card__icon-btn"
+              :disabled="isDownloadDisabled"
+              aria-label="PNG 다운로드"
+              @click.stop="onDownload"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 4v10m0 0l3.5-3.5M12 14l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
       <div class="generation-result-card__notice" role="note">
@@ -293,64 +303,6 @@ function onCollapsedThumbClick() {
           생성 결과가 원본 캐릭터와 다르다면 프롬프트를 수정하거나 다시
           생성해 주세요.
         </span>
-      </div>
-
-      <div class="generation-result-card__actions">
-        <button
-          type="button"
-          class="generation-result-card__action-btn generation-result-card__action-btn--primary"
-          :disabled="isSaveDisabled"
-          @click="onSave"
-        >
-          <span class="generation-result-card__action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8" />
-              <circle cx="8.5" cy="10.5" r="1.6" fill="currentColor" />
-              <path d="M3 16l5.2-4.2 3.3 2.6 3.5-3.1L21 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </span>
-          <span class="generation-result-card__action-text">
-            <strong>갤러리에 저장</strong>
-            <small>{{ saveDescription }}</small>
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="generation-result-card__action-btn generation-result-card__action-btn--secondary"
-          :disabled="isDownloadDisabled"
-          @click="onDownload"
-        >
-          <span class="generation-result-card__action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
-          </span>
-          <span class="generation-result-card__action-text">
-            <strong>PNG 다운로드</strong>
-            <small>파일 저장</small>
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="generation-result-card__action-btn generation-result-card__action-btn--secondary"
-          :disabled="isRegenerateDisabled"
-          @click="onRegenerate"
-        >
-          <span class="generation-result-card__action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z" fill="currentColor" />
-              <path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" fill="currentColor" />
-            </svg>
-          </span>
-          <span class="generation-result-card__action-text">
-            <strong>다시 생성하기</strong>
-            <small>{{ regenerateDescription }}</small>
-          </span>
-        </button>
       </div>
 
       <span
@@ -363,11 +315,6 @@ function onCollapsedThumbClick() {
       <ErrorMessage :message="saveMessage" variant="success" />
       <ErrorMessage :message="saveErrorMessage" variant="error" />
       <ErrorMessage :message="downloadErrorMessage" variant="error" />
-      <ErrorMessage
-        v-if="index === 0"
-        :message="regenerateErrorMessage"
-        variant="error"
-      />
 
       <div class="generation-result-card__accordions">
         <div class="generation-result-card__accordion">
@@ -517,10 +464,17 @@ function onCollapsedThumbClick() {
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+  opacity: 0;
   transition:
     background 0.2s ease,
     border-color 0.2s ease,
-    color 0.2s ease;
+    color 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.generation-result-card:hover .generation-result-card__remove-btn,
+.generation-result-card:focus-within .generation-result-card__remove-btn {
+  opacity: 1;
 }
 
 .generation-result-card__remove-btn:hover:not(:disabled) {
@@ -565,6 +519,7 @@ function onCollapsedThumbClick() {
 }
 
 .generation-result-card__image-box {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -574,6 +529,59 @@ function onCollapsedThumbClick() {
   border-radius: 16px;
   background: #ffffff;
   overflow: hidden;
+}
+
+.generation-result-card__overlay-actions {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.generation-result-card:hover .generation-result-card__overlay-actions,
+.generation-result-card:focus-within .generation-result-card__overlay-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.generation-result-card__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e4d8ff;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #6d3df2;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(80, 60, 160, 0.14);
+}
+
+.generation-result-card__icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.generation-result-card__icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (hover: none) {
+  .generation-result-card__remove-btn,
+  .generation-result-card__overlay-actions {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .generation-result-card__image-btn {
@@ -672,109 +680,6 @@ function onCollapsedThumbClick() {
   flex-shrink: 0;
 }
 
-.generation-result-card__actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  width: 100%;
-}
-
-.generation-result-card__action-btn {
-  min-height: 82px;
-  border-radius: 16px;
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  cursor: pointer;
-  font-family: var(--sans);
-  transition:
-    transform 0.18s ease,
-    box-shadow 0.18s ease,
-    border-color 0.18s ease,
-    background 0.18s ease;
-}
-
-.generation-result-card__action-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
-
-.generation-result-card__action-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 4px rgba(109, 61, 242, 0.18);
-}
-
-.generation-result-card__action-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.generation-result-card__action-btn--primary {
-  color: #ffffff;
-  border: none;
-  background: linear-gradient(135deg, #a855f7, #6d3df2);
-  box-shadow: 0 16px 32px rgba(109, 61, 242, 0.28);
-}
-
-.generation-result-card__action-btn--secondary {
-  color: #6d3df2;
-  background: #ffffff;
-  border: 1px solid #cdbdff;
-  box-shadow: 0 10px 24px rgba(80, 60, 160, 0.08);
-}
-
-.generation-result-card__action-btn--secondary:hover:not(:disabled) {
-  background: #faf7ff;
-  border-color: #6d3df2;
-}
-
-.generation-result-card__action-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.generation-result-card__action-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.generation-result-card__action-btn--primary .generation-result-card__action-icon {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.generation-result-card__action-btn--secondary .generation-result-card__action-icon {
-  background: #f1ebff;
-}
-
-.generation-result-card__action-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.generation-result-card__action-text strong {
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.generation-result-card__action-text small {
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.25;
-  white-space: nowrap;
-  opacity: 0.78;
-}
-
 .generation-result-card__accordions {
   display: flex;
   flex-direction: column;
@@ -841,12 +746,6 @@ function onCollapsedThumbClick() {
   color: #111827;
   font-size: 14px;
   line-height: 1.6;
-}
-
-@media (max-width: 900px) {
-  .generation-result-card__actions {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 768px) {

@@ -26,7 +26,7 @@ export function useGalleryFolders({
   showToast,
   refreshGallery,
   loadImages,
-  clearSelection,
+  exitSelectionMode,
   collections: collectionsRef,
   uncategorizedCount: uncategorizedCountRef,
   allFolderTotal: allFolderTotalRef,
@@ -37,8 +37,6 @@ export function useGalleryFolders({
   const showCreateFolderModal = ref(false)
   const isCreatingFolder = ref(false)
   const isRenamingFolder = ref(false)
-  const isEditingFolderName = ref(false)
-  const editFolderName = ref('')
 
   const collections = collectionsRef
   const uncategorizedCount = uncategorizedCountRef
@@ -106,17 +104,7 @@ export function useGalleryFolders({
     page.value = 1
     deleteErrorMessage.value = ''
     folderActionErrorMessage.value = ''
-    clearSelection()
-    isEditingFolderName.value = false
-
-    if (selectedFolderId.value.startsWith(COLLECTION_PREFIX)) {
-      const collection = collections.value.find(
-        (item) =>
-          item.id === selectedFolderId.value.slice(COLLECTION_PREFIX.length)
-      )
-      editFolderName.value = collection?.name ?? ''
-    }
-
+    exitSelectionMode()
     loadImages({ nextPage: 1, append: false })
   }
 
@@ -154,6 +142,10 @@ export function useGalleryFolders({
     }
     const folder = collections.value.find((item) => item.id === folderId)
     return folder?.name ?? '폴더'
+  }
+
+  function isFolderDropTarget(folderId) {
+    return folderId !== FOLDER_ID.ALL && folderId !== FOLDER_ID.FAVORITE
   }
 
   function handleFolderDragEnter(folderId, isDragging) {
@@ -221,7 +213,7 @@ export function useGalleryFolders({
       }
 
       applyMoveToLocalItems(generationIds, collectionId)
-      clearSelection()
+      exitSelectionMode()
       page.value = 1
       await loadCollections()
       await loadImages({ nextPage: 1, append: false })
@@ -245,11 +237,17 @@ export function useGalleryFolders({
 
     if (!isDragging) return
 
+    if (!isFolderDropTarget(folderId)) {
+      showToast('이 폴더로는 이동할 수 없습니다.')
+      return false
+    }
+
     const generationIds = parseDraggedIds(event)
-    if (generationIds.length === 0) return
+    if (generationIds.length === 0) return false
 
     const collectionId = resolveDropFolderId(folderId)
     await moveSelectedGenerations(generationIds, collectionId)
+    return true
   }
 
   function openCreateFolderModal() {
@@ -290,85 +288,114 @@ export function useGalleryFolders({
     }
   }
 
-  function startRenameFolder() {
-    if (!activeCollection.value) return
-    editFolderName.value = activeCollection.value.name
-    isEditingFolderName.value = true
+  function isDuplicateFolderName(folderId, name) {
+    const normalized = name.trim().toLowerCase()
+    const reservedNames = ['전체 이미지', '즐겨찾기', '미분류']
+    if (reservedNames.some((reserved) => reserved.toLowerCase() === normalized)) {
+      return true
+    }
+
+    return collections.value.some(
+      (collection) =>
+        collection.id !== folderId &&
+        collection.name.trim().toLowerCase() === normalized
+    )
   }
 
-  function cancelRenameFolder() {
-    isEditingFolderName.value = false
-    editFolderName.value = activeCollection.value?.name ?? ''
-  }
+  async function renameFolderById(folderId, name) {
+    if (!folderId || isRenamingFolder.value) {
+      return { success: false }
+    }
 
-  async function handleRenameFolder() {
-    if (!activeCollectionId.value || isRenamingFolder.value) return
-
-    const trimmedName = editFolderName.value.trim()
-    if (!trimmedName) return
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      return { success: false, error: '폴더 이름을 입력해 주세요.' }
+    }
 
     if (trimmedName.length > COLLECTION_NAME_MAX_LENGTH) {
-      folderActionErrorMessage.value = `폴더 이름은 최대 ${COLLECTION_NAME_MAX_LENGTH}자까지 입력할 수 있습니다.`
-      return
+      return {
+        success: false,
+        error: `폴더 이름은 최대 ${COLLECTION_NAME_MAX_LENGTH}자까지 입력할 수 있습니다.`,
+      }
+    }
+
+    const collection = collections.value.find((item) => item.id === folderId)
+    if (!collection) {
+      return { success: false }
+    }
+
+    if (trimmedName === collection.name) {
+      return { success: true }
+    }
+
+    if (isDuplicateFolderName(folderId, trimmedName)) {
+      return { success: false, error: '이미 같은 이름의 폴더가 있습니다.' }
     }
 
     isRenamingFolder.value = true
     folderActionErrorMessage.value = ''
 
     try {
-      const updated = await renameCollection(activeCollectionId.value, trimmedName)
-      collections.value = collections.value.map((collection) =>
-        collection.id === updated.id ? { ...collection, ...updated } : collection
+      const updated = await renameCollection(folderId, trimmedName)
+      collections.value = collections.value.map((item) =>
+        item.id === updated.id ? { ...item, ...updated } : item
       )
-      editFolderName.value = updated.name
-      isEditingFolderName.value = false
       showToast('폴더 이름이 변경되었습니다.')
+      return { success: true }
     } catch (err) {
-      folderActionErrorMessage.value = toUserErrorMessage(
-        err,
-        '폴더 이름을 변경하지 못했습니다. 다시 시도해 주세요.'
-      )
+      return {
+        success: false,
+        error: toUserErrorMessage(
+          err,
+          '폴더 이름을 변경하지 못했습니다. 다시 시도해 주세요.'
+        ),
+      }
     } finally {
       isRenamingFolder.value = false
     }
   }
 
-  async function handleSidebarRename({ folderId, name }) {
-    editFolderName.value = name
-    selectedFolderId.value = `${COLLECTION_PREFIX}${folderId}`
-    await handleRenameFolder()
-  }
-
-  async function handleDeleteFolder(folderId) {
+  function getFolderDeleteInfo(folderId) {
     const collection =
       collections.value.find((item) => item.id === folderId) ??
       activeCollection.value
-    if (!collection) return
+    if (!collection) return null
 
     const itemCount = collection.itemCount ?? 0
-    const message =
+    const title = `「${collection.name}」 폴더를 삭제할까요?`
+    const description =
       itemCount > 0
-        ? `「${collection.name}」 폴더를 삭제할까요?\n\n이미지 ${itemCount}개는 미분류로 이동합니다.`
-        : `「${collection.name}」 폴더를 삭제할까요?`
+        ? `이미지 ${itemCount}개는 미분류로 이동합니다.\n폴더 안 이미지도 함께 삭제할 수 있습니다.`
+        : '삭제한 폴더는 복구할 수 없습니다.'
 
-    if (!window.confirm(message)) return
+    return {
+      folderId: collection.id,
+      title,
+      description,
+      showCascadeOption: itemCount > 0,
+    }
+  }
 
-    const deleteImagesToo = window.confirm(
-      '폴더 안 이미지도 함께 삭제할까요?\n취소를 누르면 이미지는 미분류로만 이동합니다.'
-    )
+  async function executeDeleteFolder(folderId, { cascade = false } = {}) {
+    const collection =
+      collections.value.find((item) => item.id === folderId) ??
+      activeCollection.value
+    if (!collection) return false
 
     folderActionErrorMessage.value = ''
 
     try {
-      await deleteCollection(collection.id, { cascade: deleteImagesToo })
+      await deleteCollection(collection.id, { cascade })
       selectedFolderId.value = FOLDER_ID.UNCATEGORIZED
       await refreshGallery()
       showToast('폴더가 삭제되었습니다.')
+      return true
     } catch (err) {
       folderActionErrorMessage.value = toUserErrorMessage(
         err,
         '폴더를 삭제하지 못했습니다. 다시 시도해 주세요.'
       )
+      return false
     }
   }
 
@@ -378,8 +405,6 @@ export function useGalleryFolders({
     showCreateFolderModal.value = false
     isCreatingFolder.value = false
     isRenamingFolder.value = false
-    isEditingFolderName.value = false
-    editFolderName.value = ''
   }
 
   return {
@@ -388,8 +413,6 @@ export function useGalleryFolders({
     showCreateFolderModal,
     isCreatingFolder,
     isRenamingFolder,
-    isEditingFolderName,
-    editFolderName,
     totalImageCount,
     activeCollection,
     activeCollectionId,
@@ -406,11 +429,9 @@ export function useGalleryFolders({
     openCreateFolderModal,
     closeCreateFolderModal,
     handleCreateFolder,
-    startRenameFolder,
-    cancelRenameFolder,
-    handleRenameFolder,
-    handleSidebarRename,
-    handleDeleteFolder,
+    renameFolderById,
+    getFolderDeleteInfo,
+    executeDeleteFolder,
     resetFolderUiState,
   }
 }
