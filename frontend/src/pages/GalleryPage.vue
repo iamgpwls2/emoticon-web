@@ -21,6 +21,7 @@ const TOAST_DURATION_MS = 3000
 
 const collections = ref([])
 const uncategorizedCount = ref(0)
+const allFolderTotal = ref(0)
 
 const selectedFolderId = ref(FOLDER_ID.ALL)
 const items = ref([])
@@ -82,6 +83,54 @@ function resolveCollectionIdForFetch() {
   return undefined
 }
 
+function syncFolderListCount(fetchedTotal) {
+  const folderId = selectedFolderId.value
+
+  if (folderId === FOLDER_ID.ALL) {
+    allFolderTotal.value = fetchedTotal
+    return
+  }
+
+  if (folderId === FOLDER_ID.UNCATEGORIZED) {
+    uncategorizedCount.value = fetchedTotal
+    return
+  }
+
+  if (folderId.startsWith(COLLECTION_PREFIX)) {
+    const collectionId = folderId.slice(COLLECTION_PREFIX.length)
+    collections.value = collections.value.map((collection) =>
+      collection.id === collectionId
+        ? { ...collection, itemCount: fetchedTotal }
+        : collection
+    )
+  }
+}
+
+function adjustCountsAfterDelete(deletedCount = 1) {
+  allFolderTotal.value = Math.max(0, allFolderTotal.value - deletedCount)
+  total.value = Math.max(0, total.value - deletedCount)
+
+  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) {
+    uncategorizedCount.value = Math.max(
+      0,
+      uncategorizedCount.value - deletedCount
+    )
+    return
+  }
+
+  if (selectedFolderId.value.startsWith(COLLECTION_PREFIX)) {
+    const collectionId = selectedFolderId.value.slice(COLLECTION_PREFIX.length)
+    collections.value = collections.value.map((collection) =>
+      collection.id === collectionId
+        ? {
+            ...collection,
+            itemCount: Math.max(0, (collection.itemCount ?? 0) - deletedCount),
+          }
+        : collection
+    )
+  }
+}
+
 async function loadImages({ nextPage = 1, append = false } = {}) {
   if (append) {
     if (isLoadingMore.value || isLoading.value || !hasMore.value) return
@@ -102,12 +151,18 @@ async function loadImages({ nextPage = 1, append = false } = {}) {
     items.value = append ? [...items.value, ...result.items] : result.items
     page.value = result.page
     hasMore.value = Boolean(result.hasMore)
-    total.value = result.total ?? items.value.length
+
+    const fetchedTotal = result.total ?? items.value.length
+    total.value = fetchedTotal
+    if (!append) {
+      syncFolderListCount(fetchedTotal)
+    }
   } catch (err) {
     if (!append) {
       items.value = []
       hasMore.value = false
       total.value = 0
+      syncFolderListCount(0)
     }
 
     errorMessage.value = toUserErrorMessage(
@@ -171,6 +226,7 @@ const {
   clearSelection: () => clearSelectionBridge(),
   collections,
   uncategorizedCount,
+  allFolderTotal,
 })
 
 const sortedItems = computed(() => {
@@ -263,6 +319,7 @@ const {
   moveSelectedGenerations,
   movingIds,
   dragOverFolderId,
+  adjustCountsAfterDelete,
 })
 
 clearSelectionBridge = clearSelection
@@ -282,19 +339,9 @@ const filterDescription = computed(() => {
   return '설명 없음'
 })
 
-const folderItemCount = computed(() => {
-  if (selectedFolderId.value === FOLDER_ID.ALL) return totalImageCount.value
-  if (selectedFolderId.value === FOLDER_ID.FAVORITE) return favoriteCount.value
-  if (selectedFolderId.value === FOLDER_ID.UNCATEGORIZED) {
-    return uncategorizedCount.value
-  }
-  if (activeCollection.value) return activeCollection.value.itemCount ?? 0
-  return total.value
-})
+const folderItemCount = computed(() => displayItems.value.length)
 
-const hasAnyImages = computed(
-  () => totalImageCount.value > 0 || items.value.length > 0
-)
+const hasAnyImages = computed(() => allFolderTotal.value > 0)
 
 const isInitialLoading = () =>
   (!isAuthReady.value || isLoading.value) && items.value.length === 0
@@ -320,7 +367,7 @@ async function handleDelete(generationId) {
   try {
     await deleteGeneration(generationId)
     items.value = items.value.filter((item) => item.id !== generationId)
-    total.value = Math.max(0, total.value - 1)
+    adjustCountsAfterDelete(1)
     removeFromSelection(generationId)
     await loadCollections()
   } catch (err) {
@@ -355,6 +402,7 @@ function resetGalleryState() {
   galleryLoadGeneration += 1
   collections.value = []
   uncategorizedCount.value = 0
+  allFolderTotal.value = 0
   selectedFolderId.value = FOLDER_ID.ALL
   items.value = []
   page.value = 1

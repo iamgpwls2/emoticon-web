@@ -8,6 +8,7 @@
 ## 작성 시점
 
 - 2026-06-10 (사이드바 폴더·즐겨찾기·드래그 앤 드롭·카드 해시태그 반영)
+- 2026-06-10 (인증 준비 후 목록 로드·카운트/렌더링 수 일치·로그아웃 상태 초기화 반영)
 
 ## 구현 파일
 
@@ -17,8 +18,13 @@
 | 사이드바 | `frontend/src/components/GallerySidebar.vue` |
 | 그리드 | `frontend/src/components/GalleryGrid.vue` |
 | 카드 | `frontend/src/components/EmoticonCard.vue` |
+| 선택 액션 바 | `frontend/src/components/GalleryActionBar.vue` |
+| 폴더 이동 모달 | `frontend/src/components/GalleryFolderMoveModal.vue` |
 | 폴더 생성 모달 | `frontend/src/components/FolderCreateModal.vue` |
 | 토스트 | `frontend/src/components/GalleryToast.vue` |
+| 인증 상태 | `frontend/src/composables/useAuth.js` → `frontend/src/lib/authSession.js` |
+| 폴더·드래그 상태 | `frontend/src/composables/useGalleryFolders.js` |
+| 선택·일괄 작업 | `frontend/src/composables/useGallerySelection.js` |
 | 즐겨찾기 | `frontend/src/composables/useFavorites.js` |
 | 폴더 API 클라이언트 | `frontend/src/services/collection.service.js` |
 | 목록 API 클라이언트 | `frontend/src/services/generation.service.js` |
@@ -40,10 +46,11 @@ GalleryPage (.gallery-page.gallery-page--explorer)
                │    ├─ .gallery-page__folder-info (제목·개수·설명)
                │    └─ .gallery-page__controls (선택·정렬·보기·폴더 삭제)
                ├─ ErrorMessage (폴더 액션 오류)
-               ├─ .gallery-page__selection-hint (선택 모드 안내)
+               ├─ GalleryActionBar (선택 모드 시)
                ├─ 상태 영역 (loading / error / empty / success)
                └─ GalleryGrid + 항목 수 + [더 보기]
 ├─ FolderCreateModal (Teleport → body)
+├─ GalleryFolderMoveModal (Teleport → body)
 └─ GalleryToast (fixed, 우하단)
 ```
 
@@ -54,7 +61,90 @@ GalleryPage (.gallery-page.gallery-page--explorer)
 | 기본 선택 폴더 | **전체 이미지** (`selectedFolderId = 'all'`) |
 | 보기 모드 | `grid` |
 | 정렬 | `newest` (최신순) |
-| 진입 토스트 | 「드래그 & 드롭으로 폴더를 이동할 수 있어요!」(3초) |
+| 진입 토스트 | 「드래그 & 드롭으로 폴더를 이동할 수 있어요!」(3초, `onMounted`) |
+
+### 인증 · 데이터 로드
+
+갤러리 목록 API는 **Supabase 세션(access token)이 준비된 뒤**에만 호출합니다.
+
+```txt
+watch(isAuthReady, isAuthenticated, accessToken, userId)
+├─ auth 미준비 → 대기 (isInitialLoading)
+├─ 로그아웃 / 토큰 없음 → resetGalleryState() (items·collections·카운트·선택·즐겨찾기 초기화)
+└─ 로그인 완료 (userId 확정) → refreshGallery()
+     ├─ loadCollections()   ← 폴더 메타(이름·설명)
+     └─ loadImages()        ← GET /api/generations/me (saved_to_gallery = true)
+```
+
+| 항목 | 규칙 |
+|------|------|
+| API 토큰 | `generation.service.js` → `authSession.resolveAccessToken()` (중앙 세션) |
+| 동일 사용자 재진입 | `lastLoadedUserId`가 같으면 watch에서 중복 `refreshGallery` 생략 |
+| 토큰 갱신만 | 같은 `userId`면 목록 재조회하지 않음 |
+
+> `onMounted`에서는 **토스트만** 표시합니다. 목록 로드는 auth watch가 담당합니다.
+
+---
+
+## 이미지 개수 · 카운트 규칙
+
+카운트는 **렌더링 목록과 동일한 데이터 소스**(`GET /api/generations/me`, `saved_to_gallery = true`)를 기준으로 맞춥니다.  
+collections API의 `uncategorizedCount`·`itemCount` 합산은 갤러리 미저장 건을 포함할 수 있어 **사이드바 전체 수에 사용하지 않습니다**.
+
+### 데이터 흐름
+
+```txt
+API 응답 (generations/me)
+├─ items[]  → items ref → sortedItems → filterItemsByFolder → displayItems → GalleryGrid
+└─ total    → total ref + syncFolderListCount() (사이드바 폴더별 카운트 갱신)
+```
+
+| 상태 | 역할 |
+|------|------|
+| `items` | 현재 폴더 API 조회 결과(페이지네이션 누적) |
+| `displayItems` | 정렬 + 폴더/즐겨찾기 클라이언트 필터 적용 후 **실제 그리드에 그리는 목록** |
+| `allFolderTotal` | 「전체 이미지」사이드바/chip 숫자 (`totalImageCount`) |
+| `total` | 현재 선택 폴더의 API `total` (페이지네이션·내부 참조) |
+
+### 표시 위치별 카운트
+
+| UI 위치 | 계산 | 설명 |
+|---------|------|------|
+| 헤더 개수 pill (`N개`) | `displayItems.length` | **현재 화면에 렌더링되는 카드 수**와 항상 일치 |
+| 그리드 하단 「N개 항목」 | `displayItems.length` | 헤더와 동일 |
+| 사이드바 「전체 이미지」 | `allFolderTotal` | 전체 폴더 `loadImages` 시 API `total` |
+| 사이드바 「미분류」 | `uncategorizedCount` | 미분류 폴더 조회 시 API `total`로 `syncFolderListCount` 갱신 |
+| 사이드바 사용자 폴더 | `collection.itemCount` | 해당 폴더 조회 시 API `total`로 갱신 |
+| 사이드바 「즐겨찾기」 | `favoriteCount` | `localStorage` 기반 (클라이언트 전용) |
+| 전역 empty 판단 | `allFolderTotal > 0` | 갤러리 저장 이미지 0건일 때만 「이모티콘 만들러 가기」 |
+
+### `syncFolderListCount(fetchedTotal)`
+
+`loadImages` 성공 시 **첫 페이지 조회(`append = false`)** 에만 호출합니다.
+
+| `selectedFolderId` | 갱신 대상 |
+|--------------------|-----------|
+| `all` | `allFolderTotal` |
+| `uncategorized` | `uncategorizedCount` |
+| `collection:{uuid}` | 해당 `collections[].itemCount` |
+
+로드 실패 시 `syncFolderListCount(0)`으로 해당 폴더 카운트를 0으로 맞춥니다.
+
+### 삭제 후 카운트
+
+`adjustCountsAfterDelete(deletedCount)` — 단건 삭제·일괄 삭제 공통
+
+| 갱신 | 내용 |
+|------|------|
+| `allFolderTotal` | 항상 `deletedCount`만큼 감소 |
+| `total` | 현재 폴더 `total` 감소 |
+| `uncategorizedCount` / `itemCount` | 현재 보고 있는 폴더가 해당 폴더일 때만 감소 |
+
+삭제 후 `items`에서 제거되므로 `displayItems.length`(헤더 pill)도 함께 줄어듭니다.
+
+### 페이지네이션과 헤더 카운트
+
+page size 12·「더 보기」 사용 시, 아직 로드되지 않은 페이지가 있으면 헤더 `N개`는 **현재 로드·필터·정렬된 카드 수**를 표시합니다(API `total` 전체 수가 아님). 이는 「렌더링 수와 일치」 원칙에 따른 동작입니다.
 
 ---
 
@@ -164,7 +254,7 @@ aside.gallery-sidebar
 |------|------|
 | 아이콘 | 📁 (`aria-hidden`) |
 | 제목 | `h1`, `clamp(24px, 3vw, 32px)`, `font-weight: 800` |
-| 개수 pill | `N개`, 배경 `#f1ebff` |
+| 개수 pill | `displayItems.length` + `개`, 배경 `#f1ebff` (렌더링 카드 수) |
 | 설명 | 사용자 폴더: API `description` 또는 「설명 없음」 |
 | 이름 수정 | 사용자 폴더만 — ✎ 버튼 → 인라인 input → 저장/취소 |
 
@@ -263,16 +353,21 @@ aside.gallery-sidebar
 ## 화면 상태 (상태 전이)
 
 ```txt
+auth watch (immediate)
+├─ !isAuthReady || isLoading && items 비어 있음 → isInitialLoading
+├─ 로그인 완료 → refreshGallery (loadCollections + loadImages)
+└─ 로그아웃 → resetGalleryState
+
 onMounted
-├─ loadCollections + loadImages
-└─ 진입 토스트
+└─ 진입 토스트만 (목록 로드 없음)
 
 본문
 ├─ isInitialLoading → 로딩 문구 + skeleton grid
+│    (조건: !isAuthReady || isLoading) && items.length === 0
 ├─ errorMessage     → ErrorMessage + [다시 시도]
-├─ !hasAnyImages    → 전역 empty + /generate 링크
-├─ isEmpty (폴더별) → 폴더별 empty 문구
-└─ isSuccess        → GalleryGrid + 항목 수 + [더 보기]
+├─ !hasAnyImages    → allFolderTotal === 0 → 전역 empty + /generate 링크
+├─ isEmpty (폴더별) → displayItems.length === 0 → 폴더별 empty 문구
+└─ isSuccess        → GalleryGrid(displayItems) + 항목 수 + [더 보기]
 ```
 
 ### Empty 문구
@@ -299,8 +394,10 @@ onMounted
 
 ### 폴더 선택
 
-- 사이드바(Desktop) 또는 chip(Mobile) 클릭 → `selectedFolderId` 갱신 → 목록 재조회
-- API: `collectionId` 생략(전체) · `uncategorized` · `uuid`
+- 사이드바(Desktop) 또는 chip(Mobile) 클릭 → `selectedFolderId` 갱신 → `loadImages({ nextPage: 1 })`
+- API `collectionId`: 생략(전체·즐겨찾기) · `uncategorized` · `uuid`
+- 즐겨찾기 폴더: API는 전체 목록 조회 후 `displayItems`에서 `favoriteIds`로 클라이언트 필터
+- 폴더 전환 후 `syncFolderListCount`로 해당 폴더 사이드바 숫자 갱신
 
 ### 즐겨찾기
 

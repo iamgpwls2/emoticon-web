@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import ImageUploader from '../components/ImageUploader.vue'
 import PromptForm from '../components/PromptForm.vue'
 import PromptRefiner from '../components/PromptRefiner.vue'
@@ -176,6 +176,15 @@ async function deleteUnsavedGenerationIfNeeded() {
 function onSavedToGallery() {
   savedToGallery.value = true
 }
+
+onBeforeUnmount(() => {
+  if (isGenerating.value) {
+    console.warn(
+      '이미지 생성이 진행 중인 상태에서 페이지를 이탈했습니다. 서버 요청은 계속 처리될 수 있습니다.'
+    )
+    isGenerating.value = false
+  }
+})
 
 async function handleGenerateImage() {
   if (isGenerating.value || isUploadRequired.value) return

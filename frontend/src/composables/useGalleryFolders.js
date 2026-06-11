@@ -29,6 +29,7 @@ export function useGalleryFolders({
   clearSelection,
   collections: collectionsRef,
   uncategorizedCount: uncategorizedCountRef,
+  allFolderTotal: allFolderTotalRef,
 }) {
   const movingIds = ref([])
   const dragOverFolderId = ref('')
@@ -42,14 +43,7 @@ export function useGalleryFolders({
   const collections = collectionsRef
   const uncategorizedCount = uncategorizedCountRef
 
-  const totalImageCount = computed(
-    () =>
-      uncategorizedCount.value +
-      collections.value.reduce(
-        (sum, collection) => sum + (collection.itemCount ?? 0),
-        0
-      )
-  )
+  const totalImageCount = computed(() => allFolderTotalRef.value)
 
   const activeCollection = computed(() =>
     selectedFolderId.value.startsWith(COLLECTION_PREFIX)
@@ -211,7 +205,7 @@ export function useGalleryFolders({
   /**
    * 선택된 generation들을 대상 폴더로 이동하고 로컬 state를 갱신합니다.
    * API 성공 후 현재 폴더 뷰 기준으로 items·total을 맞추고,
-   * 사이드바 폴더 개수(loadCollections)를 갱신한 뒤 선택을 초기화합니다.
+   * loadCollections(폴더 메타) + loadImages(목록·카운트)로 사이드바·그리드를 동일 기준으로 갱신합니다.
    */
   async function moveSelectedGenerations(generationIds, collectionId) {
     folderActionErrorMessage.value = ''
@@ -228,7 +222,9 @@ export function useGalleryFolders({
 
       applyMoveToLocalItems(generationIds, collectionId)
       clearSelection()
+      page.value = 1
       await loadCollections()
+      await loadImages({ nextPage: 1, append: false })
 
       const folderLabel = collectionId
         ? getFolderDisplayName(`${COLLECTION_PREFIX}${collectionId}`)

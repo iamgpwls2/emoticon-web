@@ -18,6 +18,7 @@ export function useGallerySelection({
   moveSelectedGenerations,
   movingIds,
   dragOverFolderId,
+  adjustCountsAfterDelete,
 }) {
   const selectionMode = ref(false)
   const selectedIds = ref([])
@@ -139,7 +140,7 @@ export function useGallerySelection({
       const deletedSet = new Set(result.deletedIds)
 
       items.value = items.value.filter((item) => !deletedSet.has(item.id))
-      total.value = Math.max(0, total.value - result.deletedCount)
+      adjustCountsAfterDelete(result.deletedCount)
       clearSelection()
       await loadCollections()
       showToast(`${result.deletedCount}개 이미지를 삭제했어요.`)
