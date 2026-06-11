@@ -1,12 +1,14 @@
 import { downloadReferenceImageByUrl } from './storage.service.js';
 
-const DEFAULT_IMAGE_GENERATION_MODEL = 'gpt-image-1';
+const DEFAULT_IMAGE_GENERATION_MODEL = 'gpt-image-2';
+const DEFAULT_IMAGE_GENERATION_QUALITY = 'medium';
+const DEFAULT_IMAGE_GENERATION_SIZE = '1024x1024';
 const DEFAULT_IMAGE_GENERATION_API_URL =
   'https://api.openai.com/v1/images/generations';
 const DEFAULT_IMAGE_GENERATION_EDITS_API_URL =
   'https://api.openai.com/v1/images/edits';
 const DEFAULT_GENERATED_MIME_TYPE = 'image/png';
-const IMAGE_GENERATION_TIMEOUT_MS = 60_000;
+const IMAGE_GENERATION_TIMEOUT_MS = 120_000;
 const PLACEHOLDER_API_KEYS = new Set([
   'your-image-generation-api-key',
   'your-llm-api-key',
@@ -34,6 +36,24 @@ function getImageGenerationModel() {
   return (
     process.env.IMAGE_GENERATION_MODEL?.trim() || DEFAULT_IMAGE_GENERATION_MODEL
   );
+}
+
+function getImageGenerationQuality() {
+  return (
+    process.env.IMAGE_GENERATION_QUALITY?.trim() ||
+    DEFAULT_IMAGE_GENERATION_QUALITY
+  );
+}
+
+function getImageGenerationSize() {
+  return (
+    process.env.IMAGE_GENERATION_SIZE?.trim() || DEFAULT_IMAGE_GENERATION_SIZE
+  );
+}
+
+/** gpt-image-2는 항상 high fidelity이며 input_fidelity 파라미터를 허용하지 않습니다. */
+function modelSupportsInputFidelity(model) {
+  return !model.startsWith('gpt-image-2');
 }
 
 function getImageGenerationApiUrl() {
@@ -126,7 +146,7 @@ async function fetchImageBufferFromUrl(imageUrl, signal) {
 
 /**
  * OpenAI Images API 응답에서 imageBuffer를 추출합니다.
- * url 응답을 우선 사용하고, gpt-image-1 등 b64_json만 반환하는 경우 fallback합니다.
+ * url 응답을 우선 사용하고, gpt-image-2 등 b64_json만 반환하는 경우 fallback합니다.
  */
 async function parseOpenAiCompatibleImageResponse(data, signal) {
   const item = data?.data?.[0];
@@ -162,6 +182,8 @@ async function requestOpenAiCompatibleImageGeneration({
   model,
   apiUrl,
   finalPrompt,
+  quality,
+  size,
   signal,
 }) {
   const fullPrompt = buildFullGenerationPrompt(finalPrompt.trim());
@@ -176,7 +198,8 @@ async function requestOpenAiCompatibleImageGeneration({
       model,
       prompt: fullPrompt,
       n: 1,
-      size: '1024x1024',
+      size,
+      quality,
     }),
     signal,
   });
@@ -196,6 +219,8 @@ async function requestOpenAiCompatibleImageEdit({
   model,
   apiUrl,
   finalPrompt,
+  quality,
+  size,
   referenceImageBuffer,
   referenceMimeType,
   maskImageBuffer,
@@ -206,8 +231,11 @@ async function requestOpenAiCompatibleImageEdit({
   const formData = new FormData();
   formData.append('model', model);
   formData.append('prompt', fullPrompt);
-  formData.append('size', '1024x1024');
-  formData.append('input_fidelity', 'high');
+  formData.append('size', size);
+  formData.append('quality', quality);
+  if (modelSupportsInputFidelity(model)) {
+    formData.append('input_fidelity', 'high');
+  }
   formData.append(
     'image',
     new Blob([referenceImageBuffer], { type: referenceMimeType }),
@@ -277,6 +305,8 @@ export async function generateImageFromPrompt({
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
   const apiKey = getImageGenerationApiKey();
   const model = getImageGenerationModel();
+  const quality = getImageGenerationQuality();
+  const size = getImageGenerationSize();
   const apiUrl = getImageGenerationApiUrl();
   const editsApiUrl = getImageGenerationEditsApiUrl();
 
@@ -308,6 +338,8 @@ export async function generateImageFromPrompt({
       model,
       apiUrl: trimmedOriginalImageUrl ? editsApiUrl : apiUrl,
       finalPrompt: prompt,
+      quality,
+      size,
       referenceImageBuffer,
       referenceMimeType,
       maskImageBuffer: hasMaskImage ? maskImageBuffer : undefined,

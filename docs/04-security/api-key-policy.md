@@ -251,13 +251,17 @@ Browser → frontend/src/services/generation.service.js
 | 변수 | 필수 | 설명 |
 |------|------|------|
 | `IMAGE_GENERATION_API_KEY` | Yes | 외부 Images API key. 미설정 시 500 |
-| `IMAGE_GENERATION_MODEL` | No | 기본값 `dall-e-3` (`imageGeneration.service.js`) |
+| `IMAGE_GENERATION_MODEL` | No | 기본값 `gpt-image-2` (`imageGeneration.service.js`) |
+| `IMAGE_GENERATION_QUALITY` | No | 기본값 `medium` (`low` / `medium` / `high` / `auto`) |
+| `IMAGE_GENERATION_SIZE` | No | 기본값 `1024x1024` |
 | `IMAGE_GENERATION_API_URL` | No | 기본값 OpenAI Images endpoint |
 
 ```bash
 # backend/.env.example — placeholder만
 IMAGE_GENERATION_API_KEY=your-image-generation-api-key
-IMAGE_GENERATION_MODEL=dall-e-3
+IMAGE_GENERATION_MODEL=gpt-image-2
+IMAGE_GENERATION_QUALITY=medium
+IMAGE_GENERATION_SIZE=1024x1024
 IMAGE_GENERATION_API_URL=https://api.openai.com/v1/images/generations
 ```
 
