@@ -30,3 +30,35 @@ export async function uploadImage(file) {
 
   return readApiResponse(response, UPLOAD_FAILED_MESSAGE);
 }
+
+const SIGNED_URL_FAILED_MESSAGE =
+  '이미지 미리보기 URL을 생성하지 못했습니다. 다시 시도해 주세요.';
+
+/**
+ * 본인 user-uploads 오브젝트의 미리보기용 signed URL을 발급받습니다.
+ * @param {string} path Storage object path (예: `{userId}/{timestamp}-{uuid}.png`)
+ * @returns {Promise<{ ok: true, path: string, signedUrl: string }>}
+ */
+export async function getUploadSignedUrl(path) {
+  const trimmedPath = path?.trim();
+  if (!trimmedPath) {
+    throw new Error('미리보기할 이미지 경로가 없습니다.');
+  }
+
+  const accessToken = await resolveAccessToken(
+    '이미지 미리보기를 보려면 로그인이 필요합니다.'
+  );
+
+  const query = new URLSearchParams({ path: trimmedPath });
+  const response = await fetch(
+    `${API_BASE_URL}/api/uploads/signed-url?${query.toString()}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  return readApiResponse(response, SIGNED_URL_FAILED_MESSAGE);
+}

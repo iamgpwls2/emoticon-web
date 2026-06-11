@@ -248,6 +248,43 @@ export async function downloadReferenceImageByUrl(
 }
 
 /**
+ * private bucket `user-uploads` 오브젝트의 signed URL을 생성합니다.
+ * 본인 경로(`{userId}/...`)만 허용합니다.
+ *
+ * @param {string} userId
+ * @param {string} objectPath
+ * @param {number} [expiresInSeconds=3600]
+ * @returns {Promise<string>}
+ */
+export async function createUserUploadSignedUrl(
+  userId,
+  objectPath,
+  expiresInSeconds = DEFAULT_SIGNED_URL_EXPIRES_IN_SECONDS
+) {
+  const normalizedUserId = assertNonEmptyString(userId, 'userId');
+  const normalizedPath = assertNonEmptyString(objectPath, 'path');
+  const uploadBucket = getUploadBucketName();
+
+  if (!normalizedPath.startsWith(`${normalizedUserId}/`)) {
+    throw createUploadOwnershipForbiddenError(UPLOAD_OWNERSHIP_FORBIDDEN_MESSAGE);
+  }
+
+  const { data, error } = await supabaseAdmin.storage
+    .from(uploadBucket)
+    .createSignedUrl(normalizedPath, expiresInSeconds);
+
+  if (error || !data?.signedUrl) {
+    console.error(
+      'Supabase Storage user upload signed URL failed:',
+      error?.message ?? 'unknown'
+    );
+    throw createServiceError('Failed to create signed URL for user upload.');
+  }
+
+  return data.signedUrl;
+}
+
+/**
  * private bucket `generated-emoticons` 오브젝트의 signed URL을 생성합니다.
  * backend controller에서만 호출하세요.
  *

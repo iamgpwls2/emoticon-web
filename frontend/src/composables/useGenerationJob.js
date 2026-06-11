@@ -32,12 +32,29 @@ function notifyComplete(result) {
   onCompleteCallbacks.forEach((cb) => cb(result))
 }
 
+function sanitizeUploadedImageForSnapshot(uploadedImage) {
+  if (!uploadedImage || typeof uploadedImage !== 'object') {
+    return uploadedImage ?? null
+  }
+
+  const { file, previewUrl, ...rest } = uploadedImage
+
+  if (rest.bucket && rest.path) {
+    const { url, ...withoutUrl } = rest
+    return withoutUrl
+  }
+
+  return rest
+}
+
 function normalizeInputSnapshot(inputSnapshot) {
   if (!inputSnapshot || typeof inputSnapshot !== 'object') {
     return inputSnapshot
   }
 
-  const uploadedImage = inputSnapshot.uploadedImage ?? null
+  const uploadedImage = sanitizeUploadedImageForSnapshot(
+    inputSnapshot.uploadedImage ?? null
+  )
 
   return {
     uploadedImageUrl:
@@ -55,6 +72,28 @@ function normalizeInputSnapshot(inputSnapshot) {
     finalPrompt: inputSnapshot.finalPrompt ?? '',
     storyPrompt: inputSnapshot.storyPrompt ?? '',
   }
+}
+
+/**
+ * 페이지 이탈 후에도 업로드·입력 상태를 유지하기 위해 savedInput을 병합 갱신합니다.
+ * @param {object} partial
+ */
+export function syncSavedInput(partial) {
+  if (!partial || typeof partial !== 'object') {
+    return
+  }
+
+  const current = savedInput.value ?? {}
+  const mergedUploadedImage =
+    partial.uploadedImage !== undefined
+      ? sanitizeUploadedImageForSnapshot(partial.uploadedImage)
+      : current.uploadedImage
+
+  savedInput.value = normalizeInputSnapshot({
+    ...current,
+    ...partial,
+    uploadedImage: mergedUploadedImage,
+  })
 }
 
 function buildResultEntry(apiResult, payload) {
@@ -146,6 +185,7 @@ export function useGenerationJob() {
     generationError,
     generationResults,
     savedInput,
+    syncSavedInput,
     startGeneration,
     resetGeneration,
     toggleResult,

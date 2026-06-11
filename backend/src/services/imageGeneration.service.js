@@ -58,14 +58,14 @@ function getImageGenerationEditsApiUrl() {
 const STYLE_LOCK_PREFIX =
   '【원본 스타일 고정】 ' +
   '원본 이미지의 선 굵기, 선화 스타일, ' +
-  '얼굴 구조와 비율, 눈/코/입 형태, ' +
-  '채색 방식, 고유 색상은 절대 변경하지 않는다. ' +
+  '전체적인 실루엣과 체형 비율은 절대 변경하지 않는다. ' +
+  '단, 사용자가 아래 편집 지시에서 ' +
+  '명시적으로 변경을 요청한 요소는 예외로 적용한다. ' +
   '지금부터 편집 지시: ';
 
 const STYLE_LOCK_SUFFIX =
-  ' 단, 위에서 명시한 원본 스타일 요소는 ' +
-  '절대 변경하지 말 것. ' +
-  '텍스트가 있다면 원본과 동일한 폰트 스타일 유지.';
+  ' 위 편집 지시에서 명시적으로 변경을 요청하지 않은 ' +
+  '나머지 모든 요소는 원본 그대로 유지할 것.';
 
 function assertFinalPrompt(finalPrompt) {
   if (typeof finalPrompt !== 'string' || !finalPrompt.trim()) {

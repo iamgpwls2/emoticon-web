@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { uploadImage as uploadImageController } from '../controllers/upload.controller.js';
+import {
+  getUploadSignedUrl as getUploadSignedUrlController,
+  uploadImage as uploadImageController,
+} from '../controllers/upload.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
 import { imageUpload as uploadSingleImage } from '../middlewares/imageUpload.middleware.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -16,6 +19,15 @@ router.post(
   asyncHandler(requireAuth),
   uploadSingleImage,
   asyncHandler(uploadImageController)
+);
+
+/**
+ * GET /api/uploads/signed-url?path={user_id}/{filename}
+ */
+router.get(
+  '/signed-url',
+  asyncHandler(requireAuth),
+  asyncHandler(getUploadSignedUrlController)
 );
 
 export default router;

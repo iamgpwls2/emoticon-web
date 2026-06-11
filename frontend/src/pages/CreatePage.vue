@@ -7,8 +7,8 @@ import PromptRefiner from '../components/PromptRefiner.vue'
 import PromptChatModal from '../components/PromptChatModal.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 import GenerationResultCard from '../components/GenerationResultCard.vue'
-import { supabase } from '../lib/supabase.js'
 import { useGenerationJob } from '../composables/useGenerationJob.js'
+import { getUploadSignedUrl } from '../services/uploadService.js'
 import { useImageMask } from '../composables/useImageMask.js'
 import { showAppToast } from '../composables/useAppToast.js'
 import { saveGenerationToGallery } from '../services/generation.service.js'
@@ -26,6 +26,7 @@ const {
   markAsSaved,
   removeResult,
   resetGeneration,
+  syncSavedInput,
   onComplete,
   offComplete,
 } = useGenerationJob()
@@ -33,6 +34,7 @@ const {
 const { generateMask } = useImageMask()
 
 const uploadedImage = ref(null)
+const uploadPreviewUrl = ref('')
 const maskBlob = ref(null)
 const isMaskGenerating = ref(false)
 const isUploadRequired = ref(false)
@@ -58,7 +60,7 @@ const DOWNLOAD_FAILED_MESSAGE =
 
 const hasImage = computed(() => Boolean(uploadedImage.value))
 
-const uploaderPreviewUrl = computed(() => originalImageUrl.value || null)
+const uploaderPreviewUrl = computed(() => uploadPreviewUrl.value || null)
 
 const uploaderPreviewFileName = computed(
   () => uploadedImage.value?.name?.trim() || null
@@ -72,19 +74,58 @@ const originalImageUrl = computed(() => {
     return image.url.trim()
   }
 
-  const { bucket, path } = image
-  if (bucket && path) {
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-    const publicUrl = data.publicUrl?.trim()
-    if (publicUrl) return publicUrl
-  }
-
-  if (image.previewUrl?.trim()) {
-    return image.previewUrl.trim()
+  if (image.path?.trim()) {
+    return image.path.trim()
   }
 
   return ''
 })
+
+function extractUploadStoragePath(image) {
+  const directPath = image?.path?.trim()
+  if (directPath) {
+    return directPath
+  }
+
+  const candidateUrl = image?.url?.trim()
+  if (!candidateUrl) {
+    return ''
+  }
+
+  const match = candidateUrl.match(
+    /\/storage\/v1\/object\/(?:public|sign|authenticated)\/[^/]+\/(.+)$/
+  )
+
+  if (!match?.[1]) {
+    return ''
+  }
+
+  return decodeURIComponent(match[1])
+}
+
+async function resolveUploadPreviewUrl(image) {
+  const path = extractUploadStoragePath(image)
+
+  if (!path) {
+    uploadPreviewUrl.value = image?.url?.trim() || ''
+    return
+  }
+
+  try {
+    const { signedUrl } = await getUploadSignedUrl(path)
+    uploadPreviewUrl.value = signedUrl
+
+    if (uploadedImage.value?.path === path) {
+      uploadedImage.value = {
+        ...uploadedImage.value,
+        url: signedUrl,
+      }
+    }
+  } catch (error) {
+    console.warn('업로드 이미지 미리보기 URL 생성 실패:', error)
+    uploadPreviewUrl.value = ''
+  }
+}
 
 const isFormComplete = computed(() =>
   isPromptFormComplete({
@@ -173,7 +214,8 @@ function onPromptChatComplete(prompt) {
   isPromptChatModalOpen.value = false
 }
 
-function resetStateOnImageChange() {
+function resetOnImageChange() {
+  uploadPreviewUrl.value = ''
   promptForm.value = {
     emotion: '',
     motion: '',
@@ -189,24 +231,33 @@ function resetStateOnImageChange() {
 }
 
 function onFileSelected() {
-  uploadedImage.value = null
+  uploadPreviewUrl.value = ''
   maskBlob.value = null
   isUploadRequired.value = true
 }
 
 function onFileRemoved() {
-  if (uploadedImage.value) {
-    resetStateOnImageChange()
+  const isReuploadInProgress =
+    Boolean(uploadedImage.value) && isUploadRequired.value
+
+  if (uploadedImage.value && !isReuploadInProgress) {
+    resetOnImageChange()
   }
 
-  uploadedImage.value = null
+  if (!isReuploadInProgress) {
+    uploadPreviewUrl.value = ''
+    uploadedImage.value = null
+    isUploadRequired.value = true
+  } else {
+    isUploadRequired.value = false
+  }
+
   maskBlob.value = null
-  isUploadRequired.value = true
 }
 
 async function onUploaded(result) {
   if (uploadedImage.value) {
-    resetStateOnImageChange()
+    resetOnImageChange()
   }
 
   uploadedImage.value = {
@@ -214,6 +265,12 @@ async function onUploaded(result) {
     name: result.name?.trim() || result.path?.split('/').pop()?.trim() || '',
   }
   isUploadRequired.value = false
+
+  syncSavedInput({
+    uploadedImage: uploadedImage.value,
+    uploadedImageName: uploadedImage.value.name,
+  })
+  await resolveUploadPreviewUrl(uploadedImage.value)
 
   if (!result.file) return
 
@@ -250,14 +307,19 @@ function buildGenerationPayload() {
 
 function buildInputSnapshot() {
   const image = uploadedImage.value
-  const imageUrl = originalImageUrl.value
   const imageName =
     image?.name?.trim() || image?.path?.split('/').pop()?.trim() || ''
 
+  let persistedImage = null
+  if (image) {
+    const { file, previewUrl, ...rest } = image
+    persistedImage = { ...rest, name: imageName }
+  }
+
   return {
-    uploadedImageUrl: imageUrl || undefined,
+    uploadedImageUrl: image?.url?.trim() || undefined,
     uploadedImageName: imageName || undefined,
-    uploadedImage: image,
+    uploadedImage: persistedImage ?? undefined,
     emotion: promptForm.value.emotion,
     motion: promptForm.value.motion,
     inputText: promptForm.value.text,
@@ -266,23 +328,31 @@ function buildInputSnapshot() {
   }
 }
 
-function restoreSavedInput() {
+async function restoreSavedInput() {
   if (!savedInput.value) return
 
   const snapshot = savedInput.value
 
-  if (snapshot.uploadedImageUrl) {
+  if (
+    snapshot.uploadedImage ||
+    snapshot.uploadedImageName ||
+    snapshot.uploadedImageUrl
+  ) {
+    const persisted = snapshot.uploadedImage ?? {}
     uploadedImage.value = {
-      ...(snapshot.uploadedImage ?? {}),
-      url: snapshot.uploadedImageUrl,
-      name: snapshot.uploadedImageName ?? snapshot.uploadedImage?.name ?? '',
+      ...persisted,
+      url: persisted.url ?? snapshot.uploadedImageUrl ?? '',
+      name:
+        snapshot.uploadedImageName ??
+        persisted.name ??
+        persisted.path?.split('/').pop() ??
+        '',
     }
     isUploadRequired.value = false
-  } else if (snapshot.uploadedImage) {
-    uploadedImage.value = snapshot.uploadedImage
-    isUploadRequired.value = false
+    await resolveUploadPreviewUrl(uploadedImage.value)
   } else {
     uploadedImage.value = null
+    uploadPreviewUrl.value = ''
     isUploadRequired.value = true
   }
 
@@ -301,8 +371,8 @@ function handleGenerationComplete() {
   regenerateErrorMessage.value = ''
 }
 
-function restorePageState() {
-  restoreSavedInput()
+async function restorePageState() {
+  await restoreSavedInput()
 
   if (generationError.value && generationResults.value.length === 0) {
     generationErrorMessage.value = generationError.value
