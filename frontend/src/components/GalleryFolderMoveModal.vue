@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
+import { useBodyScrollLock } from '../composables/useBodyScrollLock.js'
 
 const props = defineProps({
   open: {
@@ -21,6 +22,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'move'])
+
+useBodyScrollLock(toRef(props, 'open'))
 
 const title = computed(() =>
   props.selectedCount > 0

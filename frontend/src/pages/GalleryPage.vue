@@ -763,6 +763,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-width: 0;
   padding: 22px;
   border: 1px solid #e8e2f8;
   border-radius: 22px;
@@ -883,18 +884,24 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 32px 16px;
   border: 1px dashed #ddd2ff;
   border-radius: 18px;
   background: #fbf8ff;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .gallery-page__empty-text {
   margin: 0;
+  max-width: 100%;
   font-size: 15px;
   line-height: 1.5;
   color: #111827;
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
 .gallery-page__create-link {

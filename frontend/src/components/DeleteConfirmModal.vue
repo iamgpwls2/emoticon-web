@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, watch } from 'vue'
+import { onBeforeUnmount, toRef, watch } from 'vue'
 import { useBodyScrollLock } from '../composables/useBodyScrollLock.js'
 
 const props = defineProps({
@@ -44,7 +44,7 @@ const cascadeChecked = defineModel('cascadeChecked', {
 
 const emit = defineEmits(['cancel', 'confirm'])
 
-useBodyScrollLock(() => props.open)
+useBodyScrollLock(toRef(props, 'open'))
 
 function handleClose() {
   if (props.loading) return

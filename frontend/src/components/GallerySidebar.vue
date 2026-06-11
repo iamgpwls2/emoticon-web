@@ -81,6 +81,14 @@ function isFolderActive(folderId) {
   return false
 }
 
+function getMenuItemClass(folderId) {
+  return {
+    'gallery-sidebar__menu-item--active': isFolderActive(folderId),
+    'gallery-sidebar__menu-item--drop': isDropHighlight(folderId),
+    'gallery-sidebar__menu-item--drop-disabled': isDropDisabledHighlight(folderId),
+  }
+}
+
 function isDropHighlight(folderId) {
   return props.dragOverFolderId === folderId && isDropTarget(folderId)
 }
@@ -167,25 +175,22 @@ onBeforeUnmount(() => {
         <li v-for="folder in systemFolders" :key="folder.id">
           <button
             type="button"
-            class="gallery-sidebar__item"
-            :class="{
-              'gallery-sidebar__item--active': isFolderActive(folder.id),
-              'gallery-sidebar__item--drop': isDropHighlight(folder.id),
-              'gallery-sidebar__item--drop-disabled': isDropDisabledHighlight(folder.id),
-            }"
+            class="gallery-sidebar__menu-item"
+            :class="getMenuItemClass(folder.id)"
             @click="handleSelect(folder.id)"
             @dragover="handleDragOver(folder.id, $event)"
             @dragenter="handleDragEnter(folder.id, $event)"
             @dragleave="handleDragLeave(folder.id)"
             @drop="handleDrop(folder.id, $event)"
           >
-            <span class="gallery-sidebar__item-icon" aria-hidden="true">
+            <span class="gallery-sidebar__menu-item-icon" aria-hidden="true">
               {{ folder.icon }}
             </span>
-            <span class="gallery-sidebar__item-name">{{ folder.name }}</span>
-            <span class="gallery-sidebar__item-count">
+            <span class="gallery-sidebar__menu-item-label">{{ folder.name }}</span>
+            <span class="gallery-sidebar__menu-item-count">
               {{ getFolderCount(folder.id) }}
             </span>
+            <span class="gallery-sidebar__menu-item-action" aria-hidden="true" />
           </button>
         </li>
       </ul>
@@ -210,37 +215,37 @@ onBeforeUnmount(() => {
           :key="folder.id"
           class="gallery-sidebar__item-wrap"
         >
-          <div class="gallery-sidebar__item-row">
+          <div
+            class="gallery-sidebar__menu-item"
+            :class="getMenuItemClass(folder.id)"
+            @dragover="handleDragOver(folder.id, $event)"
+            @dragenter="handleDragEnter(folder.id, $event)"
+            @dragleave="handleDragLeave(folder.id)"
+            @drop="handleDrop(folder.id, $event)"
+          >
             <button
               type="button"
-              class="gallery-sidebar__item"
-              :class="{
-                'gallery-sidebar__item--active': isFolderActive(folder.id),
-                'gallery-sidebar__item--drop': isDropHighlight(folder.id),
-                'gallery-sidebar__item--drop-disabled': isDropDisabledHighlight(folder.id),
-              }"
+              class="gallery-sidebar__menu-item-select"
               @click="handleSelect(folder.id)"
-              @dragover="handleDragOver(folder.id, $event)"
-              @dragenter="handleDragEnter(folder.id, $event)"
-              @dragleave="handleDragLeave(folder.id)"
-              @drop="handleDrop(folder.id, $event)"
             >
-              <span class="gallery-sidebar__item-icon" aria-hidden="true">📁</span>
-              <span class="gallery-sidebar__item-name">{{ folder.name }}</span>
-              <span class="gallery-sidebar__item-count">
-                {{ folder.itemCount ?? 0 }}
-              </span>
+              <span class="gallery-sidebar__menu-item-icon" aria-hidden="true">📁</span>
+              <span class="gallery-sidebar__menu-item-label">{{ folder.name }}</span>
             </button>
-            <button
-              type="button"
-              class="gallery-sidebar__item-menu-btn"
-              :aria-label="`「${folder.name}」 폴더 메뉴`"
-              aria-haspopup="menu"
-              :aria-expanded="openMenuFolderId === folder.id"
-              @click.stop="toggleFolderMenu(folder.id)"
-            >
-              ⋮
-            </button>
+            <span class="gallery-sidebar__menu-item-count">
+              {{ folder.itemCount ?? 0 }}
+            </span>
+            <span class="gallery-sidebar__menu-item-action">
+              <button
+                type="button"
+                class="gallery-sidebar__menu-item-more"
+                :aria-label="`「${folder.name}」 폴더 메뉴`"
+                aria-haspopup="menu"
+                :aria-expanded="openMenuFolderId === folder.id"
+                @click.stop="toggleFolderMenu(folder.id)"
+              >
+                ⋮
+              </button>
+            </span>
           </div>
 
           <div
@@ -252,7 +257,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               role="menuitem"
-              class="gallery-sidebar__menu-item"
+              class="gallery-sidebar__menu-dropdown-item"
               @click="handleRenameClick(folder)"
             >
               수정
@@ -260,7 +265,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               role="menuitem"
-              class="gallery-sidebar__menu-item gallery-sidebar__menu-item--danger"
+              class="gallery-sidebar__menu-dropdown-item gallery-sidebar__menu-dropdown-item--danger"
               @click="handleDeleteClick(folder.id)"
             >
               삭제
@@ -360,18 +365,13 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-.gallery-sidebar__item-row {
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
-}
-
-.gallery-sidebar__item {
-  display: flex;
+/* 기본 메뉴(button) · 사용자 폴더(div) 공통 4열 grid */
+.gallery-sidebar__menu-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 28px;
   align-items: center;
   gap: 10px;
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
   min-height: 46px;
   padding: 10px 12px;
   border: 1px solid transparent;
@@ -382,24 +382,36 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 600;
   text-align: left;
+  box-sizing: border-box;
   cursor: pointer;
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
-.gallery-sidebar__item:hover {
-  background: #f2ecff;
+button.gallery-sidebar__menu-item {
+  appearance: none;
 }
 
-.gallery-sidebar__item--active {
-  background: #f2ecff;
-  border-color: #cbb8ff;
+.gallery-sidebar__menu-item:hover {
+  background: #f3edff;
   color: #6d3df2;
 }
 
-.gallery-sidebar__item--drop {
+.gallery-sidebar__menu-item--active {
+  background: #eee7ff;
+  border-color: #d8c6ff;
+  color: #6d3df2;
+}
+
+.gallery-sidebar__menu-item--active .gallery-sidebar__menu-item-count {
+  color: #6d3df2;
+}
+
+.gallery-sidebar__menu-item--drop {
   background: #efe7ff;
   border: 1.5px dashed #6d3df2;
   color: #6d3df2;
@@ -407,7 +419,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 20px rgba(109, 61, 242, 0.14);
 }
 
-.gallery-sidebar__item--drop-disabled {
+.gallery-sidebar__menu-item--drop-disabled {
   background: #fafafa;
   border: 1px dashed #d1d5db;
   color: #9ca3af;
@@ -416,55 +428,94 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.gallery-sidebar__item-icon {
-  flex-shrink: 0;
-  font-size: 16px;
-  line-height: 1;
+.gallery-sidebar__menu-item:focus-visible,
+.gallery-sidebar__menu-item-select:focus-visible,
+.gallery-sidebar__menu-item-more:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(109, 61, 242, 0.18);
 }
 
-.gallery-sidebar__item-name {
-  flex: 1 1 auto;
+.gallery-sidebar__menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.gallery-sidebar__menu-item-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.gallery-sidebar__item-count {
-  flex-shrink: 0;
-  min-width: 24px;
+.gallery-sidebar__menu-item-count {
+  justify-self: end;
+  min-width: 1.5em;
   font-size: 13px;
   font-weight: 600;
-  color: #7c86a3;
+  color: #6f7690;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-.gallery-sidebar__item--active .gallery-sidebar__item-count,
-.gallery-sidebar__item--drop .gallery-sidebar__item-count {
+.gallery-sidebar__menu-item--drop .gallery-sidebar__menu-item-count {
   color: #6d3df2;
 }
 
-.gallery-sidebar__item-menu-btn {
+.gallery-sidebar__menu-item-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-  width: 32px;
-  min-height: 46px;
-  border: 1px solid transparent;
-  border-radius: 12px;
+}
+
+/* 사용자 폴더: 아이콘+라벨 선택 영역 */
+.gallery-sidebar__menu-item-select {
+  grid-column: 1 / 3;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gallery-sidebar__menu-item-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   color: #7c86a3;
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
   transition:
-    background 0.2s ease,
-    color 0.2s ease,
-    border-color 0.2s ease;
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
-.gallery-sidebar__item-menu-btn:hover,
-.gallery-sidebar__item-menu-btn[aria-expanded='true'] {
-  background: rgba(109, 61, 242, 0.1);
-  border-color: #e8e2f8;
+.gallery-sidebar__menu-item-more:hover,
+.gallery-sidebar__menu-item-more[aria-expanded='true'] {
+  background: rgba(109, 61, 242, 0.12);
   color: #6d3df2;
 }
 
@@ -481,7 +532,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 12px 32px rgba(80, 60, 160, 0.16);
 }
 
-.gallery-sidebar__menu-item {
+.gallery-sidebar__menu-dropdown-item {
   display: block;
   width: 100%;
   padding: 10px 12px;
@@ -496,16 +547,16 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.gallery-sidebar__menu-item:hover {
-  background: #f2ecff;
+.gallery-sidebar__menu-dropdown-item:hover {
+  background: #f3edff;
   color: #6d3df2;
 }
 
-.gallery-sidebar__menu-item--danger {
+.gallery-sidebar__menu-dropdown-item--danger {
   color: #ff4d6d;
 }
 
-.gallery-sidebar__menu-item--danger:hover {
+.gallery-sidebar__menu-dropdown-item--danger:hover {
   background: #fff5f7;
   color: #ff4d6d;
 }

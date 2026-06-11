@@ -1,5 +1,6 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, toRef, watch } from 'vue'
+import { useBodyScrollLock } from '../composables/useBodyScrollLock.js'
 
 const props = defineProps({
   open: {
@@ -17,6 +18,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'create'])
+
+useBodyScrollLock(toRef(props, 'open'))
 
 const folderName = ref('')
 const inputRef = ref(null)

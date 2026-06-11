@@ -1,9 +1,27 @@
-import { onBeforeUnmount, unref, watch } from 'vue'
+import { onBeforeUnmount, toValue, watch } from 'vue'
 
 const BODY_LOCK_CLASS = 'body-scroll-locked'
 
 let lockCount = 0
 let savedScrollY = 0
+
+function clearBodyScrollLockStyles() {
+  if (typeof document === 'undefined') return
+
+  document.body.classList.remove(BODY_LOCK_CLASS)
+  document.body.style.top = ''
+  document.body.style.overflow = ''
+  document.body.style.position = ''
+  document.body.style.width = ''
+  document.documentElement.style.overflow = ''
+}
+
+export function resetBodyScrollLock() {
+  if (typeof document === 'undefined') return
+
+  lockCount = 0
+  clearBodyScrollLockStyles()
+}
 
 export function lockBodyScroll() {
   if (typeof document === 'undefined') return
@@ -12,6 +30,7 @@ export function lockBodyScroll() {
     savedScrollY = window.scrollY
     document.body.classList.add(BODY_LOCK_CLASS)
     document.body.style.top = `-${savedScrollY}px`
+    document.body.style.overflow = 'hidden'
     document.documentElement.style.overflow = 'hidden'
   }
 
@@ -20,14 +39,15 @@ export function lockBodyScroll() {
 
 export function unlockBodyScroll() {
   if (typeof document === 'undefined') return
-  if (lockCount <= 0) return
+  if (lockCount <= 0) {
+    lockCount = 0
+    return
+  }
 
   lockCount -= 1
 
   if (lockCount === 0) {
-    document.body.classList.remove(BODY_LOCK_CLASS)
-    document.body.style.top = ''
-    document.documentElement.style.overflow = ''
+    clearBodyScrollLockStyles()
     window.scrollTo(0, savedScrollY)
   }
 }
@@ -36,21 +56,31 @@ export function unlockBodyScroll() {
  * @param {import('vue').MaybeRefOrGetter<boolean>} isOpen
  */
 export function useBodyScrollLock(isOpen) {
+  let lockedByThis = false
+
   watch(
-    () => unref(isOpen),
+    () => Boolean(toValue(isOpen)),
     (open) => {
       if (open) {
-        lockBodyScroll()
+        if (!lockedByThis) {
+          lockBodyScroll()
+          lockedByThis = true
+        }
         return
       }
-      unlockBodyScroll()
+
+      if (lockedByThis) {
+        unlockBodyScroll()
+        lockedByThis = false
+      }
     },
     { immediate: true }
   )
 
   onBeforeUnmount(() => {
-    if (unref(isOpen)) {
+    if (lockedByThis) {
       unlockBodyScroll()
+      lockedByThis = false
     }
   })
 }
