@@ -1,6 +1,7 @@
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_LLM_MODEL = 'gpt-4o-mini';
 const LLM_TIMEOUT_MS = 30_000;
+const MAX_DYNAMIC_TURNS = 4;
 
 function createServiceError(message) {
   const error = new Error(message);
@@ -62,6 +63,67 @@ function buildChatSystemPrompt({ finalTurn = false } = {}) {
   }
 
   lines.push(
+    '[동적 질문 4턴 규칙] ' +
+      '총 4번의 질문을 순서대로 진행할 것. ' +
+      '반드시 4번의 질문 중 정확히 1번은 ' +
+      '배경에 관한 질문을 포함할 것. ' +
+      '(배경색, 배경 스타일, 배경 분위기 등) ' +
+      '배경 질문의 위치는 2번째 또는 3번째 턴에 할 것. ' +
+      '나머지 3번의 질문은 캐릭터 표정, 동작, ' +
+      '감정 표현, 특수 효과 등 다양한 주제로 질문할 것. ' +
+      '[중복 질문 금지] ' +
+      '각 질문은 반드시 이전 질문들과 완전히 다른 주제여야 함. ' +
+      '이전 답변에서 다룬 주제의 세부 항목도 중복으로 간주. ' +
+      '질문 전 체크: 이 주제를 이미 다뤘는가? Yes면 다른 주제로.',
+    '배경 질문 시 선택지는 3~4개로 제시할 것. ' +
+      '선택지는 감정과 모션에 어울리는 배경으로 구성. ' +
+      '예시 (기쁨/활동적): 화사한 파스텔, 반짝이는 별, 흰 배경 ' +
+      '예시 (슬픔/화남): 어두운 톤, 비/번개, 흰 배경 ' +
+      '마지막 선택지는 항상 직접 입력 포함.',
+    '[질문 주제 다양성 규칙] ' +
+      '4번의 동적 질문은 반드시 서로 다른 대분류 주제여야 함. ' +
+      '대분류 주제 예시: ' +
+      '동작/모션, 표정/감정표현, 배경, 효과/장식, 텍스트/말풍선. ' +
+      '동작과 표정은 같은 대분류(신체 표현)이므로 ' +
+      '둘 중 하나만 질문할 것. ' +
+      '4번 질문의 주제가 겹치지 않도록 ' +
+      '사전에 계획하고 질문할 것.',
+    '[응답 형식 엄수] ' +
+      '선택지는 반드시 JSON의 choices 배열에만 넣을 것. ' +
+      'message 텍스트 안에 선택지 번호나 목록을 ' +
+      '절대 포함하지 말 것. ' +
+      '올바른 예시: ' +
+      '{ "type": "question", ' +
+      '"message": "어떤 배경을 원하시나요?", ' +
+      '"choices": ["어두운 톤", "흰 배경", "직접 입력"] } ' +
+      '잘못된 예시: ' +
+      '{ "type": "question", ' +
+      '"message": "배경을 선택해주세요. 1.어두운 톤 2.흰 배경", ' +
+      '"choices": [] } ' +
+      'message는 질문 문장만 포함하고 ' +
+      '선택지 내용은 절대 넣지 말 것.',
+    '[질문 형태 규칙] ' +
+      '질문은 반드시 아래 구조를 따를 것: ' +
+      '1) 질문 문장 (무엇을 선택해야 하는지 명확하게) ' +
+      '2) "예를 들어," 로 시작하는 2~3개의 구체적 예시 문장 ' +
+      '3) "선택해 주세요." 로 마무리 ' +
+      '예시: ' +
+      '"캐릭터가 어떤 동작을 하고 있으면 좋을까요? ' +
+      '예를 들어, 눈을 감고 턱을 괴고 있는 모습, ' +
+      '팔짱을 끼고 서 있는 모습 등. 선택해 주세요." ' +
+      '' +
+      '[선택지 규칙] ' +
+      'choices 배열의 선택지는 반드시 ' +
+      'message의 예시에서 언급한 내용과 ' +
+      '완전히 다른 새로운 옵션으로 구성할 것. ' +
+      'message 예시: "눈을 감고 턱을 괴고 있는 모습, 팔짱을 끼고 서 있는 모습" ' +
+      'choices 예시: ["두 손을 번쩍 들고 있는 모습", ' +
+      '"바닥에 앉아 무릎을 감싸고 있는 모습", ' +
+      '"뒤돌아서 있는 모습", "직접 입력"] ' +
+      '즉, message에 나온 예시는 choices에 절대 포함하지 말 것. ' +
+      'choices는 항상 3개 + "직접 입력" 으로 구성. ' +
+      '선택지는 구체적이고 시각적으로 상상 가능한 표현으로 작성.',
+    `You may ask up to ${MAX_DYNAMIC_TURNS} dynamic clarifying questions only.`,
     'Your goal is to ask clarifying questions through short dynamic turns.',
     'Use the initial context (emotion, motion, text) to shape the first question when conversation history is empty.',
     'If motion is "기타" or missing/empty, ask about motion first.',

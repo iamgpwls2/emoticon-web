@@ -1,13 +1,11 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import ErrorMessage from './ErrorMessage.vue'
-import {
-  DYNAMIC_TURN_LIMIT,
-  FIXED_PROMPT_SUFFIX,
-  getFixedQuestion,
-} from '../constants/promptChat.js'
+import { getFixedQuestion } from '../constants/promptChat.js'
 import { chatPrompt } from '../services/prompt.service.js'
 import { toUserErrorMessage } from '../utils/apiError.js'
+
+const DYNAMIC_TURN_LIMIT = 4
 
 const props = defineProps({
   isOpen: {
@@ -35,7 +33,7 @@ const errorMessage = ref('')
 const parseError = ref(false)
 const pendingQuestion = ref(null)
 const completedResult = ref(null)
-const chatBodyRef = ref(null)
+const chatContainer = ref(null)
 const isFinalRequestPending = ref(false)
 
 const canSendInput = computed(
@@ -77,9 +75,8 @@ function appendUserMessage(content) {
 
 async function scrollToBottom() {
   await nextTick()
-  const body = chatBodyRef.value
-  if (body) {
-    body.scrollTop = body.scrollHeight
+  if (chatContainer.value) {
+    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
   }
 }
 
@@ -197,12 +194,6 @@ async function submitAnswer(answer) {
   pendingQuestion.value = null
   await scrollToBottom()
 
-  if (phase.value === 'fixed_1') {
-    phase.value = 'fixed_2'
-    showFixedQuestion('fixed_2')
-    return
-  }
-
   if (phase.value === 'fixed_2') {
     phase.value = 'complete'
     await requestFinalPrompt()
@@ -212,8 +203,8 @@ async function submitAnswer(answer) {
   dynamicTurnCount.value += 1
 
   if (dynamicTurnCount.value >= DYNAMIC_TURN_LIMIT) {
-    phase.value = 'fixed_1'
-    showFixedQuestion('fixed_1')
+    phase.value = 'fixed_2'
+    showFixedQuestion('fixed_2')
     return
   }
 
@@ -245,13 +236,9 @@ function handleRetry() {
   requestChat()
 }
 
-function buildCompletedPrompt(finalPrompt) {
-  return `${finalPrompt.trim()} ${FIXED_PROMPT_SUFFIX}`.trim()
-}
-
 function handleComplete() {
   if (!completedResult.value?.finalPrompt) return
-  emit('complete', buildCompletedPrompt(completedResult.value.finalPrompt))
+  emit('complete', completedResult.value.finalPrompt.trim())
 }
 
 function handleClose() {
@@ -267,7 +254,7 @@ function handleBackdropClick(event) {
 
 const previewPrompt = computed(() => {
   if (!completedResult.value?.finalPrompt) return ''
-  return buildCompletedPrompt(completedResult.value.finalPrompt)
+  return completedResult.value.finalPrompt.trim()
 })
 
 watch(
@@ -313,7 +300,7 @@ watch(
             </button>
           </div>
 
-          <div ref="chatBodyRef" class="prompt-chat-modal__body">
+          <div ref="chatContainer" class="prompt-chat-modal__body">
             <div
               v-for="(message, index) in messages"
               :key="`${message.role}-${index}`"
@@ -432,8 +419,9 @@ watch(
 .prompt-chat-modal__panel {
   display: flex;
   flex-direction: column;
-  width: min(560px, 100%);
-  max-height: min(720px, calc(100vh - 40px));
+  width: 480px;
+  height: 600px;
+  max-height: 85vh;
   border: 1px solid #e8e2f8;
   border-radius: 20px;
   background: #ffffff;
@@ -443,6 +431,7 @@ watch(
 
 .prompt-chat-modal__header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -476,6 +465,7 @@ watch(
 
 .prompt-chat-modal__body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px 24px;
   display: flex;
@@ -600,6 +590,7 @@ watch(
 
 .prompt-chat-modal__footer {
   display: flex;
+  flex-shrink: 0;
   gap: 10px;
   padding: 16px 24px 24px;
   border-top: 1px solid #f0ebff;
@@ -663,5 +654,12 @@ watch(
 .prompt-chat-modal-enter-from .prompt-chat-modal__panel,
 .prompt-chat-modal-leave-to .prompt-chat-modal__panel {
   transform: translateY(8px) scale(0.98);
+}
+
+@media (max-width: 520px) {
+  .prompt-chat-modal__panel {
+    width: 90vw;
+    height: 85vh;
+  }
 }
 </style>

@@ -6,6 +6,39 @@ function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function appendGenerationFields(formData, fields) {
+  const {
+    emotion,
+    motion,
+    inputText,
+    storyPrompt,
+    finalPrompt,
+    originalImageUrl,
+    collectionId,
+  } = fields;
+
+  formData.append('emotion', emotion);
+  formData.append('motion', motion);
+  formData.append('storyPrompt', storyPrompt ?? '');
+  formData.append('finalPrompt', finalPrompt);
+
+  const trimmedInputText =
+    typeof inputText === 'string' ? inputText.trim() : '';
+  if (trimmedInputText) {
+    formData.append('inputText', trimmedInputText);
+  }
+
+  const trimmedOriginalImageUrl = originalImageUrl?.trim();
+  if (trimmedOriginalImageUrl) {
+    formData.append('originalImageUrl', trimmedOriginalImageUrl);
+  }
+
+  const trimmedCollectionId = collectionId?.trim();
+  if (trimmedCollectionId) {
+    formData.append('collectionId', trimmedCollectionId);
+  }
+}
+
 /**
  * backend POST /api/generations 로 이모티콘 이미지 생성을 요청합니다.
  * @param {{
@@ -15,6 +48,7 @@ function isNonEmptyString(value) {
  *   inputText?: string,
  *   storyPrompt: string,
  *   finalPrompt: string,
+ *   maskBlob?: Blob | null,
  * }} payload
  * @returns {Promise<{ id: string, generatedImageUrl: string, status: string }>}
  */
@@ -26,6 +60,7 @@ export async function createGeneration({
   storyPrompt,
   finalPrompt,
   collectionId,
+  maskBlob,
 }) {
   if (!isNonEmptyString(finalPrompt)) {
     throw new Error('finalPrompt는 필수값입니다.');
@@ -35,34 +70,62 @@ export async function createGeneration({
     '이모티콘을 생성하려면 로그인이 필요합니다.'
   );
 
-  const payload = {
+  const fields = {
     emotion,
     motion,
+    inputText,
     storyPrompt,
     finalPrompt,
+    originalImageUrl,
+    collectionId,
   };
-  const trimmedInputText =
-    typeof inputText === 'string' ? inputText.trim() : '';
-  if (trimmedInputText) {
-    payload.inputText = trimmedInputText;
-  }
-  const trimmedOriginalImageUrl = originalImageUrl?.trim();
-  if (trimmedOriginalImageUrl) {
-    payload.originalImageUrl = trimmedOriginalImageUrl;
-  }
-  const trimmedCollectionId = collectionId?.trim();
-  if (trimmedCollectionId) {
-    payload.collectionId = trimmedCollectionId;
+
+  const hasMask = maskBlob instanceof Blob;
+
+  let requestInit;
+  if (hasMask) {
+    const formData = new FormData();
+    appendGenerationFields(formData, fields);
+    formData.append('maskImage', maskBlob, 'mask.png');
+    requestInit = {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
+    };
+  } else {
+    const payload = {
+      emotion,
+      motion,
+      storyPrompt,
+      finalPrompt,
+    };
+    const trimmedInputText =
+      typeof inputText === 'string' ? inputText.trim() : '';
+    if (trimmedInputText) {
+      payload.inputText = trimmedInputText;
+    }
+    const trimmedOriginalImageUrl = originalImageUrl?.trim();
+    if (trimmedOriginalImageUrl) {
+      payload.originalImageUrl = trimmedOriginalImageUrl;
+    }
+    const trimmedCollectionId = collectionId?.trim();
+    if (trimmedCollectionId) {
+      payload.collectionId = trimmedCollectionId;
+    }
+
+    requestInit = {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    };
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/generations`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(`${API_BASE_URL}/api/generations`, requestInit);
 
   const body = await readApiResponse(
     response,

@@ -55,11 +55,27 @@ function getImageGenerationEditsApiUrl() {
   );
 }
 
+const STYLE_LOCK_PREFIX =
+  '【원본 스타일 고정】 ' +
+  '원본 이미지의 선 굵기, 선화 스타일, ' +
+  '얼굴 구조와 비율, 눈/코/입 형태, ' +
+  '채색 방식, 고유 색상은 절대 변경하지 않는다. ' +
+  '지금부터 편집 지시: ';
+
+const STYLE_LOCK_SUFFIX =
+  ' 단, 위에서 명시한 원본 스타일 요소는 ' +
+  '절대 변경하지 말 것. ' +
+  '텍스트가 있다면 원본과 동일한 폰트 스타일 유지.';
+
 function assertFinalPrompt(finalPrompt) {
   if (typeof finalPrompt !== 'string' || !finalPrompt.trim()) {
     throw createServiceError('finalPrompt is required.');
   }
   return finalPrompt.trim();
+}
+
+function buildFullGenerationPrompt(prompt) {
+  return STYLE_LOCK_PREFIX + prompt + STYLE_LOCK_SUFFIX;
 }
 
 function logOpenAiErrorResponse(status, errorBody) {
@@ -148,7 +164,7 @@ async function requestOpenAiCompatibleImageGeneration({
   finalPrompt,
   signal,
 }) {
-  const prompt = finalPrompt.trim();
+  const fullPrompt = buildFullGenerationPrompt(finalPrompt.trim());
 
   const response = await fetch(apiUrl, {
     method: 'POST',
@@ -158,7 +174,7 @@ async function requestOpenAiCompatibleImageGeneration({
     },
     body: JSON.stringify({
       model,
-      prompt,
+      prompt: fullPrompt,
       n: 1,
       size: '1024x1024',
     }),
@@ -182,19 +198,29 @@ async function requestOpenAiCompatibleImageEdit({
   finalPrompt,
   referenceImageBuffer,
   referenceMimeType,
+  maskImageBuffer,
+  maskMimeType,
   signal,
 }) {
-  const prompt = finalPrompt.trim();
+  const fullPrompt = buildFullGenerationPrompt(finalPrompt.trim());
   const formData = new FormData();
   formData.append('model', model);
-  formData.append('prompt', prompt);
+  formData.append('prompt', fullPrompt);
   formData.append('size', '1024x1024');
-  formData.append('input_fidelity', 'low');
+  formData.append('input_fidelity', 'high');
   formData.append(
     'image',
     new Blob([referenceImageBuffer], { type: referenceMimeType }),
     buildReferenceImageFilename(referenceMimeType)
   );
+
+  if (maskImageBuffer?.length) {
+    formData.append(
+      'mask',
+      new Blob([maskImageBuffer], { type: maskMimeType || 'image/png' }),
+      'mask.png'
+    );
+  }
 
   const response = await fetch(apiUrl, {
     method: 'POST',
@@ -231,13 +257,21 @@ async function callImageGenerationProvider(params) {
  * finalPrompt와 (선택) originalImageUrl로 외부 이미지 생성 API를 호출하고 Buffer를 반환합니다.
  * backend controller에서만 호출하세요.
  *
- * @param {{ finalPrompt: string, originalImageUrl?: string, userId?: string }} params
+ * @param {{
+ *   finalPrompt: string,
+ *   originalImageUrl?: string,
+ *   userId?: string,
+ *   maskImageBuffer?: Buffer,
+ *   maskMimeType?: string,
+ * }} params
  * @returns {Promise<{ imageBuffer: Buffer, mimeType: string }>}
  */
 export async function generateImageFromPrompt({
   finalPrompt,
   originalImageUrl,
   userId,
+  maskImageBuffer,
+  maskMimeType,
 }) {
   const prompt = assertFinalPrompt(finalPrompt);
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
@@ -266,6 +300,9 @@ export async function generateImageFromPrompt({
       referenceMimeType = referenceImage.mimeType;
     }
 
+    const hasMaskImage =
+      Buffer.isBuffer(maskImageBuffer) && maskImageBuffer.length > 0;
+
     return await callImageGenerationProvider({
       apiKey,
       model,
@@ -273,6 +310,8 @@ export async function generateImageFromPrompt({
       finalPrompt: prompt,
       referenceImageBuffer,
       referenceMimeType,
+      maskImageBuffer: hasMaskImage ? maskImageBuffer : undefined,
+      maskMimeType: hasMaskImage ? maskMimeType : undefined,
       signal: controller.signal,
     });
   } catch (error) {

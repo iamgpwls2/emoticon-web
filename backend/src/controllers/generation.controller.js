@@ -56,9 +56,12 @@ export async function createGeneration(req, res) {
   const userId = req.user.id;
 
   try {
+    const maskFile = req.file;
     const result = await runGenerationPipeline({
       userId,
       ...req.body,
+      maskImageBuffer: maskFile?.buffer,
+      maskMimeType: maskFile?.mimetype,
     });
 
     return res.status(201).json(result);

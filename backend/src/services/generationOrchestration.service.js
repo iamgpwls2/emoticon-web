@@ -33,6 +33,8 @@ function toSafeErrorMessage(error) {
  *   storyPrompt?: string,
  *   finalPrompt: string,
  *   collectionId?: string | null,
+ *   maskImageBuffer?: Buffer,
+ *   maskMimeType?: string,
  * }} params
  * @returns {Promise<{ id: string, generatedImageUrl: string, status: string }>}
  */
@@ -45,6 +47,8 @@ export async function runGenerationPipeline({
   storyPrompt,
   finalPrompt,
   collectionId,
+  maskImageBuffer,
+  maskMimeType,
 }) {
   const trimmedOriginalImageUrl = originalImageUrl?.trim() || undefined;
 
@@ -68,10 +72,14 @@ export async function runGenerationPipeline({
     }
   );
 
+  const hasMaskImage =
+    Buffer.isBuffer(maskImageBuffer) && maskImageBuffer.length > 0;
+
   console.info('runGenerationPipeline', {
     userId,
     hasReferenceImage,
     hasInputText: Boolean(trimmedInputText),
+    hasMaskImage,
   });
 
   const record = await createGeneratingRecord({
@@ -90,6 +98,8 @@ export async function runGenerationPipeline({
       finalPrompt: imageGenerationPrompt,
       originalImageUrl: trimmedOriginalImageUrl,
       userId,
+      maskImageBuffer: hasMaskImage ? maskImageBuffer : undefined,
+      maskMimeType: hasMaskImage ? maskMimeType : undefined,
     });
     const { generatedImageUrl } = await uploadGeneratedEmoticon(
       userId,

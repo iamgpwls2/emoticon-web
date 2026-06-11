@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref } from 'vue'
 import ErrorMessage from './ErrorMessage.vue'
 import { useAsyncState } from '../composables/useAsyncState.js'
 import { uploadImage } from '../services/uploadService.js'
@@ -8,10 +8,22 @@ const ALLOWED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 
-const emit = defineEmits(['uploaded', 'file-selected'])
+const props = defineProps({
+  previewUrl: {
+    type: String,
+    default: null,
+  },
+  previewFileName: {
+    type: String,
+    default: null,
+  },
+})
+
+const emit = defineEmits(['uploaded', 'file-selected', 'file-removed'])
 
 const fileInputRef = ref(null)
-const previewUrl = ref('')
+const localPreviewUrl = ref('')
+const isObjectPreview = ref(false)
 const selectedFile = ref(null)
 
 const {
@@ -24,6 +36,24 @@ const {
 } = useAsyncState({
   fallbackError: '이미지 업로드에 실패했습니다. 다시 시도해 주세요.',
 })
+
+const displayedPreviewUrl = computed(() => {
+  if (localPreviewUrl.value) {
+    return localPreviewUrl.value
+  }
+  return props.previewUrl?.trim() || ''
+})
+
+const displayFileName = computed(() => {
+  if (selectedFile.value) {
+    return selectedFile.value.name
+  }
+  return props.previewFileName?.trim() || ''
+})
+
+const showPreview = computed(() => Boolean(displayedPreviewUrl.value))
+
+const showMeta = computed(() => Boolean(displayFileName.value))
 
 function getExtension(filename) {
   const dotIndex = filename.lastIndexOf('.')
@@ -45,11 +75,12 @@ function validateFile(file) {
   return ''
 }
 
-function revokePreview() {
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value)
-    previewUrl.value = ''
+function revokeLocalPreview() {
+  if (isObjectPreview.value && localPreviewUrl.value) {
+    URL.revokeObjectURL(localPreviewUrl.value)
   }
+  localPreviewUrl.value = ''
+  isObjectPreview.value = false
 }
 
 function resetInput() {
@@ -58,7 +89,7 @@ function resetInput() {
   }
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   clearError()
   clearSuccess()
 
@@ -69,15 +100,17 @@ function handleFileChange(event) {
   if (validationError) {
     errorMessage.value = validationError
     selectedFile.value = null
-    revokePreview()
+    revokeLocalPreview()
     resetInput()
     return
   }
 
-  revokePreview()
+  revokeLocalPreview()
   selectedFile.value = file
-  previewUrl.value = URL.createObjectURL(file)
+  localPreviewUrl.value = URL.createObjectURL(file)
+  isObjectPreview.value = true
   emit('file-selected')
+  await handleUpload()
 }
 
 function openFilePicker() {
@@ -88,14 +121,86 @@ function openFilePicker() {
 async function handleUpload() {
   if (!selectedFile.value || uploading.value) return
 
-  await runUpload(() => uploadImage(selectedFile.value), {
+  const result = await runUpload(() => uploadImage(selectedFile.value), {
     successMessage: '이미지 업로드가 완료되었습니다.',
-    onSuccess: (result) => emit('uploaded', result),
+    onSuccess: (uploadResult) =>
+      emit('uploaded', { ...uploadResult, file: selectedFile.value }),
+  })
+
+  if (result === undefined) {
+    resetInput()
+  }
+}
+
+function handleRemovePreview() {
+  if (uploading.value) return
+
+  revokeLocalPreview()
+  selectedFile.value = null
+  resetInput()
+  clearError()
+  clearSuccess()
+  emit('file-removed')
+}
+
+function createNamedClipboardFile(file) {
+  const extension =
+    file.type === 'image/jpeg'
+      ? '.jpg'
+      : file.type === 'image/webp'
+        ? '.webp'
+        : '.png'
+
+  return new File([file], `clipboard-${Date.now()}${extension}`, {
+    type: file.type,
   })
 }
 
+async function handlePaste(event) {
+  if (uploading.value) return
+
+  const items = event.clipboardData?.items
+  if (!items) return
+
+  for (const item of items) {
+    if (!item.type.startsWith('image/')) continue
+
+    const file = item.getAsFile()
+    if (!file) continue
+
+    clearError()
+    clearSuccess()
+
+    const namedFile = createNamedClipboardFile(file)
+    const validationError = validateFile(namedFile)
+    if (validationError) {
+      errorMessage.value = validationError
+      selectedFile.value = null
+      revokeLocalPreview()
+      resetInput()
+      return
+    }
+
+    revokeLocalPreview()
+    selectedFile.value = namedFile
+    localPreviewUrl.value = URL.createObjectURL(namedFile)
+    isObjectPreview.value = true
+    emit('file-selected')
+    await handleUpload()
+    return
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('paste', handlePaste)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('paste', handlePaste)
+})
+
 onUnmounted(() => {
-  revokePreview()
+  revokeLocalPreview()
 })
 </script>
 
@@ -117,39 +222,42 @@ onUnmounted(() => {
         :disabled="uploading"
         @click="openFilePicker"
       >
-        이미지 선택
-      </button>
-
-      <button
-        type="button"
-        class="image-uploader__btn image-uploader__btn--secondary"
-        :disabled="!selectedFile || uploading"
-        @click="handleUpload"
-      >
-        {{ uploading ? '업로드 중…' : '업로드' }}
+        {{ uploading ? '업로드 중...' : '이미지 업로드' }}
       </button>
     </div>
 
-    <p v-if="selectedFile" class="image-uploader__meta">
-      {{ selectedFile.name }} · {{ (selectedFile.size / 1024).toFixed(1) }} KB
+    <p v-if="showMeta" class="image-uploader__meta">
+      {{ displayFileName
+      }}<template v-if="selectedFile">
+        · {{ (selectedFile.size / 1024).toFixed(1) }} KB
+      </template>
     </p>
 
-    <div v-if="previewUrl" class="image-uploader__preview-wrap">
+    <div v-if="showPreview" class="image-uploader__preview-wrap">
+      <button
+        type="button"
+        class="image-uploader__remove-btn"
+        aria-label="이미지 제거"
+        :disabled="uploading"
+        @click="handleRemovePreview"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
       <img
-        :src="previewUrl"
+        :src="displayedPreviewUrl"
         alt="선택한 이미지 미리보기"
         class="image-uploader__preview"
       />
     </div>
 
     <div
-      v-else-if="!selectedFile"
+      v-else
       class="image-uploader__placeholder"
       aria-hidden="true"
     >
       <span class="image-uploader__placeholder-icon">🖼</span>
       <span class="image-uploader__placeholder-text">
-        이미지를 선택하면 미리보기가 표시됩니다
+        이미지를 선택하거나 Ctrl+V 또는 ⌘+V로 붙여넣기 하세요
       </span>
     </div>
 
@@ -245,6 +353,7 @@ onUnmounted(() => {
 }
 
 .image-uploader__preview-wrap {
+  position: relative;
   width: 100%;
   max-width: 260px;
   max-height: 260px;
@@ -253,6 +362,45 @@ onUnmounted(() => {
   border-radius: 12px;
   overflow: hidden;
   background: #faf7ff;
+}
+
+.image-uploader__remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e4d8ff;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #6d3df2;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.image-uploader__remove-btn:hover:not(:disabled) {
+  background: #f1ebff;
+  border-color: #6d3df2;
+  color: #5b21b6;
+}
+
+.image-uploader__remove-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(109, 61, 242, 0.18);
+}
+
+.image-uploader__remove-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .image-uploader__preview {

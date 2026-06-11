@@ -54,11 +54,29 @@ const MOTION_OPTIONS = [
   '기타',
 ]
 
+const props = defineProps({
+  initialForm: {
+    type: Object,
+    default: null,
+  },
+})
+
 const emit = defineEmits(['update:form', 'interaction'])
 
 const emotion = ref('')
 const motion = ref('')
 const text = ref('')
+
+watch(
+  () => props.initialForm,
+  (form) => {
+    if (!form) return
+    emotion.value = form.emotion ?? ''
+    motion.value = form.motion ?? ''
+    text.value = form.text ?? form.inputText ?? ''
+  },
+  { immediate: true }
+)
 
 const touched = ref({
   emotion: false,

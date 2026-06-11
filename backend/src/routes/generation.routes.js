@@ -8,6 +8,7 @@ import {
   patchGenerationGallery as patchGenerationGalleryController,
 } from '../controllers/generation.controller.js';
 import { requireAuth } from '../middlewares/auth.middleware.js';
+import { optionalGenerationMaskUpload } from '../middlewares/generationMaskUpload.middleware.js';
 import {
   validateBulkDeleteGenerations,
   validateCreateGeneration,
@@ -37,6 +38,7 @@ router.get(
 router.post(
   '/',
   asyncHandler(requireAuth),
+  optionalGenerationMaskUpload,
   validateCreateGeneration,
   asyncHandler(createGenerationController)
 );
